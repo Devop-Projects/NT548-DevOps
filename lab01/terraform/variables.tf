@@ -1,40 +1,86 @@
 variable "aws_region" {
-  description = "AWS region de deploy (ap-southeast-1 = Singapore, gan VN nhat)"
-  type        = string
-  default     = "ap-southeast-1"
+  type    = string
+  default = "ap-southeast-1"
 }
 
 variable "project_name" {
-  description = "Tien to dat ten cho tat ca resources, de tim tren AWS Console"
+  type    = string
+  default = "nt548-lab01"
+}
+
+variable "my_ip" {
+  description = "IP cua ban de whitelist SSH. Lay tai https://checkip.amazonaws.com"
   type        = string
-  default     = "nt548-lab01"
 }
 
 variable "vpc_cidr" {
-  description = "CIDR block cua VPC — 10.0.0.0/16 cho phep 65536 dia chi IP"
-  type        = string
-  default     = "10.0.0.0/16"
+  type    = string
+  default = "10.0.0.0/16"
 }
 
 variable "public_subnet_cidr" {
-  description = "CIDR cua Public Subnet — /24 = 256 dia chi"
-  type        = string
-  default     = "10.0.1.0/24"
+  type    = string
+  default = "10.0.1.0/24"
+}
+
+variable "public_subnet_cidr_2" {
+  type    = string
+  default = "10.0.2.0/24"
 }
 
 variable "private_subnet_cidr" {
-  description = "CIDR cua Private Subnet"
-  type        = string
-  default     = "10.0.2.0/24"
+  type    = string
+  default = "10.0.3.0/24"
+}
+
+variable "private_subnet_cidr_2" {
+  type    = string
+  default = "10.0.4.0/24"
 }
 
 variable "instance_type" {
-  description = "Loai EC2 instance — t2.micro nam trong Free Tier"
-  type        = string
-  default     = "t2.micro"
+  type    = string
+  default = "t2.micro"
 }
 
 variable "key_name" {
-  description = "Ten EC2 Key Pair da tao tren AWS Console (de SSH vao may)"
+  type = string
+}
+
+variable "app_port" {
+  description = "Port app: 3000 (mono backend) hoac 80 (micro api-gateway)"
+  type        = number
+  default     = 3000
+}
+
+variable "db_name" {
+  type    = string
+  default = "taskdb"
+}
+
+variable "db_username" {
+  type    = string
+  default = "taskuser"
+}
+
+variable "db_password" {
+  type      = string
+  sensitive = true
+}
+
+variable "container_image" {
+  description = "Docker image URI"
   type        = string
+  default     = "nginx:alpine"
+}
+
+variable "ecs_desired_count" {
+  type    = number
+  default = 1
+}
+
+variable "jwt_secret" {
+  description = "JWT secret — phai khop voi JWT_SECRET trong .env"
+  type        = string
+  sensitive   = true
 }
