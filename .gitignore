@@ -1,0 +1,25 @@
+# Node.js — không đẩy thư mục packages lên git (nặng hàng trăm MB)
+node_modules/
+npm-debug.log*
+
+# Biến môi trường — chứa mật khẩu, không được public
+.env
+*.env.local
+
+# Build output
+dist/
+build/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Terraform state — chứa thông tin nhạy cảm về infra
+*.tfstate
+*.tfstate.backup
+.terraform/
