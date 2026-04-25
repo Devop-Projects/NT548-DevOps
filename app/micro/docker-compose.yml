@@ -1,0 +1,87 @@
+version: '3.8'
+
+services:
+  auth-postgres:
+    image: postgres:15-alpine
+    container_name: auth-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: authdb
+      POSTGRES_USER: authuser
+      POSTGRES_PASSWORD: password
+    volumes:
+      - auth_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U authuser -d authdb"]
+      interval: 10s
+      retries: 5
+
+  task-mongo:
+    image: mongo:7-jammy
+    container_name: task-mongo
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: password
+      MONGO_INITDB_DATABASE: taskdb
+    volumes:
+      - task_mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      retries: 5
+
+  auth-service:
+    build: ./auth-service
+    container_name: auth-service
+    restart: unless-stopped
+    environment:
+      PORT: 3001
+      DATABASE_URL: postgres://authuser:password@auth-postgres:5432/authdb
+      JWT_SECRET: dev-secret-change-in-prod
+    depends_on:
+      auth-postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3001/health || exit 1"]
+      interval: 15s
+      retries: 3
+
+  task-service:
+    build: ./task-service
+    container_name: task-service
+    restart: unless-stopped
+    environment:
+      PORT: 3002
+      MONGODB_URL: mongodb://root:password@task-mongo:27017/taskdb?authSource=admin
+      AUTH_SERVICE_URL: http://auth-service:3001
+    depends_on:
+      task-mongo:
+        condition: service_healthy
+      auth-service:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: http://localhost/api
+    container_name: micro-frontend
+    restart: unless-stopped
+
+  api-gateway:
+    image: nginx:alpine
+    container_name: api-gateway
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./api-gateway/nginx.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - auth-service
+      - task-service
+      - frontend
+
+volumes:
+  auth_postgres_data:
+  task_mongo_data:

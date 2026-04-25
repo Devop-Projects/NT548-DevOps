@@ -1,0 +1,62 @@
+# app/mono/docker-compose.yml
+
+version: '3.8'
+
+services:
+  # ── Database ──────────────────────────────────────────
+  postgres:
+    image: postgres:15-alpine
+    container_name: taskdb
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: taskdb
+      POSTGRES_USER: taskuser
+      POSTGRES_PASSWORD: password
+    volumes:
+      # Lưu data ra ngoài container — tắt container data vẫn còn
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"           # chỉ dùng khi debug local, bỏ khi production
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U taskuser -d taskdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Backend ───────────────────────────────────────────
+  backend:
+    build: ./backend
+    container_name: task-backend
+    restart: unless-stopped
+    environment:
+      PORT: 3000
+      DATABASE_URL: postgres://taskuser:password@postgres:5432/taskdb
+      JWT_SECRET: dev-secret-change-in-production
+      JWT_EXPIRES_IN: 7d
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy   # chờ DB sẵn sàng mới start
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # ── Frontend ──────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: http://localhost:3000/api   # đổi thành IP EC2 khi deploy
+    container_name: task-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:    # Docker quản lý volume này, data tồn tại kể cả khi container bị xóa
