@@ -19,7 +19,17 @@ build/
 .DS_Store
 Thumbs.db
 
-# Terraform state — chứa thông tin nhạy cảm về infra
+# Terraform state
 *.tfstate
 *.tfstate.backup
 .terraform/
+
+# AWS Key Pair
+*.pem
+
+# Log files
+logs/
+*.log
+
+
+docs/phase-*/*

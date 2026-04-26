@@ -1,6 +1,11 @@
 # app/mono/docker-compose.yml
-
-version: '3.8'
+#
+# Improvements over original:
+# - Removed `version: '3.8'` (deprecated since Docker Compose v2)
+# - Added migration as separate one-off service (Factor #12)
+# - Use /health/ready for backend healthcheck (proper readiness)
+# - Don't expose Postgres port (security: only internal access)
+# - Added resource limits (prevent runaway containers)
 
 services:
   # ── Database ──────────────────────────────────────────
@@ -13,16 +18,40 @@ services:
       POSTGRES_USER: taskuser
       POSTGRES_PASSWORD: password
     volumes:
-      # Lưu data ra ngoài container — tắt container data vẫn còn
       - postgres_data:/var/lib/postgresql/data
-      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
-    ports:
-      - "5432:5432"           # chỉ dùng khi debug local, bỏ khi production
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    # ports section removed in production-like setup.
+    # Uncomment below ONLY for local debugging with external DB client:
+    # ports:
+    #   - "5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U taskuser -d taskdb"]
       interval: 10s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+
+  # ── Database Migration (Factor #12: Admin Process) ───
+  # Runs once before backend starts. Exits when done.
+  migrate:
+    build: ./backend
+    container_name: task-migrate
+    command: npm run migrate
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgres://taskuser:password@postgres:5432/taskdb
+      JWT_SECRET: dev-secret-change-in-production
+      JWT_EXPIRES_IN: 7d
+      LOG_LEVEL: info
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"   # Run once, don't restart
 
   # ── Backend ───────────────────────────────────────────
   backend:
@@ -31,6 +60,8 @@ services:
     restart: unless-stopped
     environment:
       PORT: 3000
+      NODE_ENV: production
+      LOG_LEVEL: info
       DATABASE_URL: postgres://taskuser:password@postgres:5432/taskdb
       JWT_SECRET: dev-secret-change-in-production
       JWT_EXPIRES_IN: 7d
@@ -38,25 +69,46 @@ services:
       - "3000:3000"
     depends_on:
       postgres:
-        condition: service_healthy   # chờ DB sẵn sàng mới start
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:3000/health || exit 1"]
+      # Use readiness endpoint (checks DB too)
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3000/health/ready || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 3
+      start_period: 10s   # Allow time for app to start before first check
+    # Graceful shutdown: send SIGTERM, wait 30s, then SIGKILL
+    stop_grace_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.5'
 
   # ── Frontend ──────────────────────────────────────────
   frontend:
     build:
       context: ./frontend
       args:
-        VITE_API_URL: http://localhost:3000/api   # đổi thành IP EC2 khi deploy
+        VITE_API_URL: http://localhost:3000/api
     container_name: task-frontend
     restart: unless-stopped
     ports:
       - "8080:80"
     depends_on:
       - backend
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:80 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.25'
 
 volumes:
-  postgres_data:    # Docker quản lý volume này, data tồn tại kể cả khi container bị xóa
+  postgres_data:
