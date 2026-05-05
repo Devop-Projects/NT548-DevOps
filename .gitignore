@@ -33,3 +33,7 @@ logs/
 
 
 docs/phase-*/*
+
+
+.env.local
+.env.*.local
