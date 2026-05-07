@@ -37,3 +37,7 @@ docs/phase-*/*
 
 .env.local
 .env.*.local
+
+*-secret-plain.yaml
+
+*.unsealed.yaml

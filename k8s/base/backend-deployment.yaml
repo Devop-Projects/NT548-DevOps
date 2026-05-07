@@ -22,35 +22,38 @@ spec:
     metadata:
       labels:
         app: backend
-        version: v0.1.0
+        version: v0.1.3
     spec:
       terminationGracePeriodSeconds: 30
       containers:
       - name: backend
-        image: task-manager-backend:v0.1.2
+        image: task-manager-backend:v0.1.3
         imagePullPolicy: IfNotPresent
         ports:
         - name: http
           containerPort: 3000
+
+        # ─── ConfigMap: non-sensitive config ───
         envFrom:
         - configMapRef:
             name: backend-config
-        - secretRef:
-            name: backend-secrets       
-        # env:
-        # - name: PORT
-        #   value: "3000"
-        # - name: NODE_ENV
-        #   value: "production"
-        # - name: LOG_LEVEL
-        #   value: "info"
-        # # Tạm thời inline — sẽ chuyển sang ConfigMap/Secret ở 3.5
-        # - name: DATABASE_URL
-        #   value: "postgres://taskuser:password@postgres:5432/taskdb"
-        # - name: JWT_SECRET
-        #   value: "TEMPORARY-DEV-SECRET-DO-NOT-USE-IN-PRODUCTION-32CHARS"
-        # - name: JWT_EXPIRES_IN
-          # value: "7d"
+
+        # ─── Secrets: sensitive values ───
+        # Pattern: Single Source of Truth
+        # POSTGRES_PASSWORD comes from postgres-secrets (same as Postgres pod)
+        # JWT_SECRET comes from backend-secrets (app-specific)
+        env:
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secrets
+              key: POSTGRES_PASSWORD
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: backend-secrets
+              key: JWT_SECRET
+
         resources:
           requests:
             cpu: 100m
@@ -58,7 +61,7 @@ spec:
           limits:
             cpu: 500m
             memory: 256Mi
-        # Health probes — cần Service postgres trước thì readiness mới pass
+
         livenessProbe:
           httpGet:
             path: /health/live
@@ -83,7 +86,6 @@ metadata:
   namespace: dev
 spec:
   type: ClusterIP
-  internalTrafficPolicy: Local
   selector:
     app: backend
   ports:

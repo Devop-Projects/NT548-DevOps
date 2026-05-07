@@ -1,28 +1,28 @@
 /**
  * Config validator — fail-fast pattern.
  *
- * Why this matters?
+ * Validates 2 modes:
+ *   Mode 1 (Docker Compose): DATABASE_URL provided directly
+ *   Mode 2 (K8s): Build URL from DB_HOST, DB_PORT, DB_NAME, DB_USER, POSTGRES_PASSWORD
  *
- * Bad pattern: Lazy loading env vars
- *   - App starts successfully even with missing JWT_SECRET
- *   - First user request → crash with cryptic error
- *   - Hard to debug, especially with K8s rolling deployment
- *
- * Good pattern (this file): Validate at startup
- *   - App fails to start if config invalid
- *   - K8s sees pod CrashLoopBackoff → operator notices immediately
- *   - Clear error message saying which var is missing
- *
- * Reference: 12-factor app, Factor #3 (Config)
+ * At least one mode must be fully satisfied.
  */
 
 const logger = require('./logger');
 
-const REQUIRED_VARS = [
+// Always required (regardless of mode)
+const ALWAYS_REQUIRED = [
   'PORT',
-  'DATABASE_URL',
   'JWT_SECRET',
   'JWT_EXPIRES_IN',
+];
+
+// Mode 2 required vars (when DATABASE_URL not set)
+const DB_COMPONENTS = [
+  'DB_HOST',
+  'DB_NAME',
+  'DB_USER',
+  'POSTGRES_PASSWORD',
 ];
 
 const RECOMMENDED_VARS = [
@@ -34,11 +34,26 @@ function validateConfig() {
   const missing = [];
   const warnings = [];
 
-  // Check required vars
-  for (const key of REQUIRED_VARS) {
+  // Check always-required
+  for (const key of ALWAYS_REQUIRED) {
     if (!process.env[key] || process.env[key].trim() === '') {
       missing.push(key);
     }
+  }
+
+  // Check DB config (one of two modes must be satisfied)
+  const hasDbUrl = !!(process.env.DATABASE_URL && process.env.DATABASE_URL.trim() !== '');
+
+  if (!hasDbUrl) {
+    // Mode 2: Need all components
+    const dbMissing = DB_COMPONENTS.filter(
+      key => !process.env[key] || process.env[key].trim() === ''
+    );
+    if (dbMissing.length > 0) {
+      missing.push(`(Either DATABASE_URL OR all of: ${dbMissing.join(', ')})`);
+    }
+  } else {
+    logger.info('Using DATABASE_URL (Mode 1: Direct)');
   }
 
   // Check recommended
@@ -63,7 +78,8 @@ function validateConfig() {
       { missing },
       'FATAL: Missing required environment variables. App cannot start.'
     );
-    logger.fatal('Required vars: ' + REQUIRED_VARS.join(', '));
+    logger.fatal('Always required: ' + ALWAYS_REQUIRED.join(', '));
+    logger.fatal('DB config: Either DATABASE_URL OR all of (' + DB_COMPONENTS.join(', ') + ')');
     process.exit(1);
   }
 
@@ -76,6 +92,7 @@ function validateConfig() {
     nodeEnv: process.env.NODE_ENV || 'development',
     port: process.env.PORT,
     logLevel: process.env.LOG_LEVEL || 'info',
+    dbMode: hasDbUrl ? 'direct-url' : 'components',
   }, 'Configuration validated successfully');
 }
 

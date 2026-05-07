@@ -1,0 +1,108 @@
+# ─── Headless Service ───
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-headless
+  namespace: dev
+  labels:
+    app: postgres
+spec:
+  clusterIP: None              # ← Headless
+  selector:
+    app: postgres
+  ports:
+  - name: postgres
+    port: 5432
+    targetPort: 5432
+
+---
+# ─── ClusterIP Service (cho app dễ connect) ───
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: dev
+  labels:
+    app: postgres
+spec:
+  type: ClusterIP
+  selector:
+    app: postgres
+  ports:
+  - name: postgres
+    port: 5432
+    targetPort: 5432
+
+---
+# ─── StatefulSet ───
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: dev
+  labels:
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/part-of: task-manager
+spec:
+  serviceName: postgres-headless
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      terminationGracePeriodSeconds: 60   # DB cần thời gian flush
+      containers:
+      - name: postgres
+        image: postgres:15-alpine
+        ports:
+        - name: postgres
+          containerPort: 5432
+        env:
+        - name: POSTGRES_DB
+          value: taskdb
+        - name: POSTGRES_USER
+          value: taskuser
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secrets
+              key: POSTGRES_PASSWORD
+        # PGDATA trong subdir để tránh lost+found issue
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+        
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/postgresql/data
+        
+        resources:
+          requests: {cpu: 200m, memory: 256Mi}
+          limits: {cpu: 1000m, memory: 1Gi}
+        
+        # Health probes (Lesson 3.8 sẽ học sâu)
+        livenessProbe:
+          exec:
+            command: ["pg_isready", "-U", "taskuser"]
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          exec:
+            command: ["pg_isready", "-U", "taskuser"]
+          initialDelaySeconds: 5
+          periodSeconds: 5
+  
+  # ─── PVC TEMPLATE ───
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: [ReadWriteOnce]
+      storageClassName: standard      # Default StorageClass của kind
+      resources:
+        requests:
+          storage: 5Gi
