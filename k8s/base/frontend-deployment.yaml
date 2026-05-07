@@ -18,10 +18,26 @@ spec:
       - name: frontend
         image: task-manager-frontend:v0.1.0  # build + load tương tự backend
         ports:
-        - containerPort: 8080
+        - name: http
+          containerPort: 8080
         resources:
           requests: {cpu: 50m, memory: 64Mi}
           limits: {cpu: 200m, memory: 128Mi}
+
+        livenessProbe:
+          httpGet:
+            path: /
+            port: http
+          periodSeconds: 30
+          failureThreshold: 3
+        
+        readinessProbe:
+          httpGet:
+            path: /
+            port: http
+          periodSeconds: 10
+          failureThreshold: 2
+
 ---
 apiVersion: v1
 kind: Service

@@ -84,17 +84,31 @@ spec:
           requests: {cpu: 200m, memory: 256Mi}
           limits: {cpu: 1000m, memory: 1Gi}
         
-        # Health probes (Lesson 3.8 sẽ học sâu)
+        # ─── PROBES ───
+        # Startup: cho Postgres khởi động (slow init khi PVC mới)
+        startupProbe:
+          exec:
+            command: ["pg_isready", "-U", "taskuser", "-d", "taskdb"]
+          periodSeconds: 10
+          failureThreshold: 30        # 30 × 10s = 5 phút
+        
+        # Liveness: process alive (postgres) — không check DB query
+        # Vì Postgres bị stuck thì query đơn giản cũng treo
+        # Tip: dùng pg_isready (chỉ ping process), KHÔNG dùng `psql -c "SELECT 1"`
         livenessProbe:
           exec:
             command: ["pg_isready", "-U", "taskuser"]
-          initialDelaySeconds: 30
-          periodSeconds: 10
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        
+        # Readiness: cùng pg_isready (DB sẵn sàng accept connection)
         readinessProbe:
           exec:
-            command: ["pg_isready", "-U", "taskuser"]
-          initialDelaySeconds: 5
-          periodSeconds: 5
+            command: ["pg_isready", "-U", "taskuser", "-d", "taskdb"]
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
   
   # ─── PVC TEMPLATE ───
   volumeClaimTemplates:

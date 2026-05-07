@@ -1,64 +1,32 @@
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: backend
-  namespace: task-manager-dev
-  labels:
-    app.kubernetes.io/name: backend
-    app.kubernetes.io/part-of: task-manager
 spec:
-  replicas: 2
-  selector:
-    matchLabels:
-      app: backend
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
-  revisionHistoryLimit: 5
   template:
-    metadata:
-      labels:
-        app: backend
-        version: v0.1.0
     spec:
-      terminationGracePeriodSeconds: 30
       containers:
-      - name: backend
-        image: task-manager-backend:v0.1.0
-        imagePullPolicy: IfNotPresent
-        ports:
-        - name: http
-          containerPort: 3000
-        # ─── Inject từ ConfigMap + Secret ───
-        envFrom:
-        - configMapRef:
-            name: backend-config
-        - secretRef:
-            name: backend-secrets
-        resources:
-          requests: {cpu: 100m, memory: 128Mi}
-          limits: {cpu: 500m, memory: 256Mi}
-        livenessProbe:
-          httpGet: {path: /health/live, port: http}
-          initialDelaySeconds: 15
-          periodSeconds: 30
-        readinessProbe:
-          httpGet: {path: /health/ready, port: http}
-          initialDelaySeconds: 5
+      - name: postgres
+        # ... env, volumeMounts như cũ
+        
+        # ─── PROBES ───
+        # Startup: cho Postgres khởi động (slow init khi PVC mới)
+        startupProbe:
+          exec:
+            command: ["pg_isready", "-U", "taskuser", "-d", "taskdb"]
           periodSeconds: 10
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: backend
-  namespace: task-manager-dev
-spec:
-  type: ClusterIP
-  selector:
-    app: backend
-  ports:
-  - name: http
-    port: 3000
-    targetPort: http
+          failureThreshold: 30        # 30 × 10s = 5 phút
+        
+        # Liveness: process alive (postgres) — không check DB query
+        # Vì Postgres bị stuck thì query đơn giản cũng treo
+        # Tip: dùng pg_isready (chỉ ping process), KHÔNG dùng `psql -c "SELECT 1"`
+        livenessProbe:
+          exec:
+            command: ["pg_isready", "-U", "taskuser"]
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        
+        # Readiness: cùng pg_isready (DB sẵn sàng accept connection)
+        readinessProbe:
+          exec:
+            command: ["pg_isready", "-U", "taskuser", "-d", "taskdb"]
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3

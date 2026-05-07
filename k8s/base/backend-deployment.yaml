@@ -62,21 +62,39 @@ spec:
             cpu: 500m
             memory: 256Mi
 
+        # ─── PROBES ───
+        # Startup: cho app 60s để start (Node.js + Sequelize init)
+        startupProbe:
+          httpGet:
+            path: /health/live
+            port: http
+          periodSeconds: 5
+          failureThreshold: 12        # 12 × 5s = 60s
+        
+        # Liveness: app process alive
+        # KHÔNG check DB! (anti-pattern)
         livenessProbe:
           httpGet:
             path: /health/live
             port: http
-          initialDelaySeconds: 15
           periodSeconds: 30
           timeoutSeconds: 5
+          failureThreshold: 3
+        
+        # Readiness: app + DB ready
         readinessProbe:
           httpGet:
             path: /health/ready
             port: http
-          initialDelaySeconds: 5
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 3
+        
+        # ─── LIFECYCLE: preStop để Endpoints sync ───
+        lifecycle:
+          preStop:
+            exec:
+              command: ["sh", "-c", "sleep 5"]
 
 ---
 apiVersion: v1
