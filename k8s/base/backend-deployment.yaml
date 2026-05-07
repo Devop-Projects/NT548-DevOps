@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: backend
-  namespace: dev
+  namespace: task-manager-dev
   labels:
     app.kubernetes.io/name: backend
     app.kubernetes.io/part-of: task-manager
@@ -83,7 +83,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: backend
-  namespace: dev
+  namespace: task-manager-dev
 spec:
   type: ClusterIP
   selector:

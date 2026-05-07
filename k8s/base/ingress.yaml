@@ -2,7 +2,7 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: task-manager
-  namespace: dev
+  namespace: task-manager-dev
   annotations:
     # Bỏ rewrite-target và use-regex - không cần nữa
     nginx.ingress.kubernetes.io/ssl-redirect: "false"

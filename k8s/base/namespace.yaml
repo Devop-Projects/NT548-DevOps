@@ -1,0 +1,9 @@
+# k8s/base/namespace.yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: task-manager-dev
+  labels:
+    environment: dev
+    project: task-manager
+    managed-by: thesis

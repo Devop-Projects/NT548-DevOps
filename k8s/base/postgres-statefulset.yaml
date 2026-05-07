@@ -3,7 +3,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: postgres-headless
-  namespace: dev
+  namespace: task-manager-dev
   labels:
     app: postgres
 spec:
@@ -21,7 +21,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: postgres
-  namespace: dev
+  namespace: task-manager-dev
   labels:
     app: postgres
 spec:
@@ -39,7 +39,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: postgres
-  namespace: dev
+  namespace: task-manager-dev
   labels:
     app.kubernetes.io/name: postgres
     app.kubernetes.io/part-of: task-manager

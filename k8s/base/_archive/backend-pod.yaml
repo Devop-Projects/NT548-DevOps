@@ -2,7 +2,7 @@ apiVersion: v1
 kind: Pod
 metadata:
   name: backend-pod
-  namespace: dev                  # tạo namespace dev trước nếu chưa có
+  namespace: task-manager-dev                  # tạo namespace dev trước nếu chưa có
   labels:
     app: backend
     environment: dev
