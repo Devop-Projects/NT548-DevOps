@@ -24,7 +24,10 @@ spec:
         - name: POSTGRES_USER
           value: taskuser
         - name: POSTGRES_PASSWORD
-          value: password        # ← Sẽ chuyển sang Secret ở 3.5
+          valueFrom: 
+            secretKeyRef:
+              name: postgres-secrets
+              key: POSTGRES_PASSWORD
         # Volume sẽ học ở 3.6 — tạm thời emptyDir (data mất khi pod restart)
         volumeMounts:
         - name: data
