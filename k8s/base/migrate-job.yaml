@@ -1,0 +1,22 @@
+# k8s/base/migrate-job.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: db-migrate
+  namespace: dev
+spec:
+  backoffLimit: 3            # Retry 3 lần nếu fail
+  ttlSecondsAfterFinished: 300  # Auto-cleanup sau 5 phút
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: migrate
+        image: task-manager-backend:v0.1.0
+        imagePullPolicy: IfNotPresent
+        command: ["node", "src/scripts/migrate.js"]
+        envFrom:
+        - configMapRef:
+            name: backend-config
+        - secretRef:
+            name: backend-secrets

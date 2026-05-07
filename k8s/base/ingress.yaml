@@ -4,24 +4,25 @@ metadata:
   name: task-manager
   namespace: dev
   annotations:
-    nginx.ingress.kubernetes.io/use-regex: "true"
-    # Chỉ rewrite những gì bắt đầu bằng /api
-    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    # Bỏ rewrite-target và use-regex - không cần nữa
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
 spec:
   ingressClassName: nginx
   rules:
   - host: taskmanager.local
     http:
       paths:
-      - path: /api(/|$)(.*) # Group 2 ($2) là phần sau /api
-        pathType: ImplementationSpecific
+      # Backend: pass-through, giữ nguyên /api/*
+      - path: /api
+        pathType: Prefix
         backend:
           service:
             name: backend
             port:
               number: 3000
-      - path: /()(.*)      # Group 2 ($2) ở đây là chính nó, không làm hỏng path Frontend
-        pathType: ImplementationSpecific
+      # Frontend: catch-all
+      - path: /
+        pathType: Prefix
         backend:
           service:
             name: frontend
