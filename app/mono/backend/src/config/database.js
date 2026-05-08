@@ -5,23 +5,62 @@ require('dotenv').config();
 /**
  * Database connection with production-grade pool config.
  *
- * Why pool config matters?
+ * 12-Factor Compliance (Factor #3 — Config):
+ * Single Source of Truth pattern:
+ *   - Password: from POSTGRES_PASSWORD (same Secret as Postgres pod)
+ *   - Connection metadata (host, port, db name, user): from ConfigMap
+ *   - Full DATABASE_URL is built at runtime, never stored
  *
- * Default Sequelize: pool max=5
- *   - Only 5 concurrent DB connections per process
- *   - With 10 backend pods → 50 connections total
- *   - Postgres default max_connections=100 → OK now
- *   - But scale to 30 pods → 150 → DB rejects new connections
+ * Why this matters?
+ *   - One password, one Secret → no drift between Postgres & Backend
+ *   - Sensitive vs non-sensitive cleanly separated
+ *   - Easier rotation: update one Secret, both pods reload
  *
- * Tune based on:
- *   - Postgres max_connections (default 100)
- *   - Number of app replicas in K8s
- *   - Average concurrent requests per pod
- *
- * Formula: pool.max × replicas <= postgres.max_connections × 0.8
+ * Backward compatibility:
+ *   - If DATABASE_URL is set (e.g., docker-compose), use it directly
+ *   - Otherwise, build from components (K8s pattern)
  */
 
-const sequelize = new Sequelize(process.env.DATABASE_URL, {
+function buildDatabaseUrl() {
+  // Backward compat: if DATABASE_URL is fully provided, use it
+  if (process.env.DATABASE_URL) {
+    logger.debug('Using DATABASE_URL from environment');
+    return process.env.DATABASE_URL;
+  }
+
+  // K8s pattern: build URL from components
+  const host = process.env.DB_HOST;
+  const port = process.env.DB_PORT || '5432';
+  const name = process.env.DB_NAME;
+  const user = process.env.DB_USER;
+  const pass = process.env.POSTGRES_PASSWORD;
+
+  // Validate required components
+  const missing = [];
+  if (!host) missing.push('DB_HOST');
+  if (!name) missing.push('DB_NAME');
+  if (!user) missing.push('DB_USER');
+  if (!pass) missing.push('POSTGRES_PASSWORD');
+
+  if (missing.length > 0) {
+    throw new Error(
+      `Cannot build DATABASE_URL. Missing env vars: ${missing.join(', ')}. ` +
+      `Either set DATABASE_URL directly or provide all components.`
+    );
+  }
+
+  // encodeURIComponent handles special chars in password (e.g., @, :, /)
+  const encodedPass = encodeURIComponent(pass);
+  return `postgres://${user}:${encodedPass}@${host}:${port}/${name}`;
+}
+
+const databaseUrl = buildDatabaseUrl();
+
+// Log connection target (without password) for debugging
+const safeUrl = databaseUrl.replace(/:([^:@]+)@/, ':***@');
+logger.info({ databaseUrl: safeUrl }, 'Database connection target');
+
+const sequelize = new Sequelize(databaseUrl, {
   dialect: 'postgres',
 
   // Use pino logger for SQL queries (only in debug mode)
@@ -33,8 +72,8 @@ const sequelize = new Sequelize(process.env.DATABASE_URL, {
   pool: {
     max: parseInt(process.env.DB_POOL_MAX || '10', 10),
     min: parseInt(process.env.DB_POOL_MIN || '2', 10),
-    acquire: 30000,  // Max time (ms) to get connection from pool before throwing
-    idle: 10000,     // Close connection after idle for 10s
+    acquire: 30000,
+    idle: 10000,
   },
 
   // Retry on connection failure (transient network issues)
@@ -47,14 +86,10 @@ const sequelize = new Sequelize(process.env.DATABASE_URL, {
       /SequelizeConnectionError/,
     ],
   },
-
-  // Disable sync in production (use migrations instead)
-  // We do NOT call .sync() here anymore - migrations are explicit
 });
 
 /**
  * Test connection - call at startup to verify DB reachable.
- * Returns Promise that resolves when connected, rejects on failure.
  */
 sequelize.testConnection = async function() {
   try {

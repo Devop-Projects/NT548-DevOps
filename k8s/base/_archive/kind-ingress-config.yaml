@@ -1,0 +1,38 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: task-manager
+  namespace: task-manager-dev
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  ingressClassName: nginx          # ← Controller nào xử lý ingress này
+  
+  # ─── TLS ───
+  tls:
+  - hosts:
+    - taskmanager.local
+    secretName: task-manager-tls   # Secret chứa cert (lesson 3.5)
+  
+  # ─── Routing rules ───
+  rules:
+  - host: taskmanager.local        # User gõ vào browser
+    http:
+      paths:
+      # /api/* → backend service
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: backend
+            port:
+              number: 3000
+      
+      # /* → frontend service (catch-all)
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: frontend
+            port:
+              number: 80

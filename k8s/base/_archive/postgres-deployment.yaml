@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+spec:
+  replicas: 1                  # Tạm 1 (DB không đơn giản scale)
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:15-alpine
+        ports:
+        - name: postgres
+          containerPort: 5432
+        env:
+        - name: POSTGRES_DB
+          value: taskdb
+        - name: POSTGRES_USER
+          value: taskuser
+        - name: POSTGRES_PASSWORD
+          valueFrom: 
+            secretKeyRef:
+              name: postgres-secrets
+              key: POSTGRES_PASSWORD
+        # Volume sẽ học ở 3.6 — tạm thời emptyDir (data mất khi pod restart)
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/postgresql/data
+      volumes:
+      - name: data
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres                # ← Tên này dùng trong DATABASE_URL
+spec:
+  type: ClusterIP
+  selector:
+    app: postgres               # ← Match với label pod
+  ports:
+  - name: postgres
+    port: 5432                  # Port Service
+    targetPort: 5432            # Port container

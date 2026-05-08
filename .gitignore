@@ -33,3 +33,13 @@ logs/
 
 
 docs/phase-*/*
+
+
+.env.local
+.env.*.local
+
+k8s/base/script.sh
+
+*-secret-plain.yaml
+
+*.unsealed.yaml

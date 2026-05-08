@@ -58,14 +58,13 @@ app.use(express.json());
 //
 // Why split? See https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/
 
-app.get('/health/live', (req, res) => {
-  // Simplest possible — if Express responds, process is alive
+
+const healthRouter = express.Router();
+healthRouter.get('/live', (req, res) => {
   res.json({ status: 'alive' });
 });
-
-app.get('/health/ready', async (req, res) => {
+healthRouter.get('/ready', async (req, res) => {
   try {
-    // Check DB connection
     await sequelize.authenticate();
     res.json({ status: 'ready', dependencies: { database: 'ok' } });
   } catch (err) {
@@ -76,6 +75,10 @@ app.get('/health/ready', async (req, res) => {
     });
   }
 });
+
+// Mount cả 2 prefix - hỗ trợ backward compatibility
+app.use('/health', healthRouter);       // For K8s probes (internal)
+app.use('/api/health', healthRouter);   // For external health checks
 
 // Legacy health endpoint (backward compatibility)
 app.get('/health', (req, res) => {

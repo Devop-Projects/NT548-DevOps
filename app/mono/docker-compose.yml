@@ -1,104 +1,129 @@
 # app/mono/docker-compose.yml
 #
-# Improvements over original:
-# - Removed `version: '3.8'` (deprecated since Docker Compose v2)
-# - Added migration as separate one-off service (Factor #12)
-# - Use /health/ready for backend healthcheck (proper readiness)
-# - Don't expose Postgres port (security: only internal access)
-# - Added resource limits (prevent runaway containers)
+# Production-grade compose file.
+
+
+# ── Networks  ─────────────────────────
+networks:
+  frontend-net:
+    driver: bridge
+  backend-net:
+    driver: bridge
+    internal: true   # DB không có internet → defense in depth
+
+# ── Volumes  ──────────────────────────
+volumes:
+  postgres_data:
+    name: ${COMPOSE_PROJECT_NAME:-mono}_postgres_data
 
 services:
-  # ── Database ──────────────────────────────────────────
+  # ── Database ────────────────────────────────────
   postgres:
-    image: postgres:15-alpine
+    image: postgres:15.5-alpine
     container_name: taskdb
     restart: unless-stopped
     environment:
-      POSTGRES_DB: taskdb
-      POSTGRES_USER: taskuser
-      POSTGRES_PASSWORD: password
+      POSTGRES_DB: ${POSTGRES_DB:-taskdb}
+      POSTGRES_USER: ${POSTGRES_USER:-taskuser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
-    # ports section removed in production-like setup.
-    # Uncomment below ONLY for local debugging with external DB client:
-    # ports:
-    #   - "5432:5432"
+    networks:
+      - backend-net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U taskuser -d taskdb"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-taskuser} -d ${POSTGRES_DB:-taskdb}"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 30s
     deploy:
       resources:
         limits:
           memory: 512M
           cpus: '0.5'
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
-  # ── Database Migration (Factor #12: Admin Process) ───
-  # Runs once before backend starts. Exits when done.
+  # ── Migration (one-off task — Factor #12) ───────
   migrate:
     build: ./backend
     container_name: task-migrate
     command: npm run migrate
     environment:
-      NODE_ENV: production
-      PORT: 3000
-      DATABASE_URL: postgres://taskuser:password@postgres:5432/taskdb
-      JWT_SECRET: dev-secret-change-in-production
-      JWT_EXPIRES_IN: 7d
-      LOG_LEVEL: info
+      NODE_ENV: ${NODE_ENV:-production}
+      DATABASE_URL: postgres://${POSTGRES_USER:-taskuser}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-taskdb}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      PORT: ${BACKEND_PORT:-3000}
+    networks:
+      - backend-net
     depends_on:
       postgres:
         condition: service_healthy
-    restart: "no"   # Run once, don't restart
+    restart: "no"
 
-  # ── Backend ───────────────────────────────────────────
+  # ── Backend ─────────────────────────────────────
   backend:
-    build: ./backend
+    build:
+      context: ./backend
+      target: runtime    # Multi-stage final stage
     container_name: task-backend
     restart: unless-stopped
     environment:
-      PORT: 3000
-      NODE_ENV: production
-      LOG_LEVEL: info
-      DATABASE_URL: postgres://taskuser:password@postgres:5432/taskdb
-      JWT_SECRET: dev-secret-change-in-production
-      JWT_EXPIRES_IN: 7d
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: ${BACKEND_PORT:-3000}
+      DATABASE_URL: postgres://${POSTGRES_USER:-taskuser}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-taskdb}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
     ports:
-      - "3000:3000"
+      - "${BACKEND_PORT:-3000}:3000"
+    networks:
+      - frontend-net
+      - backend-net
     depends_on:
       postgres:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
     healthcheck:
-      # Use readiness endpoint (checks DB too)
       test: ["CMD-SHELL", "wget -q --spider http://localhost:3000/health/ready || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 3
-      start_period: 10s   # Allow time for app to start before first check
-    # Graceful shutdown: send SIGTERM, wait 30s, then SIGKILL
+      start_period: 10s
     stop_grace_period: 30s
     deploy:
       resources:
         limits:
           memory: 256M
           cpus: '0.5'
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
-  # ── Frontend ──────────────────────────────────────────
+  # ── Frontend ────────────────────────────────────
   frontend:
     build:
       context: ./frontend
       args:
-        VITE_API_URL: http://localhost:3000/api
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:3000/api}
     container_name: task-frontend
     restart: unless-stopped
     ports:
-      - "8080:80"
+      - "${FRONTEND_PORT:-8080}:8080"
+    networks:
+      - frontend-net
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "wget -q --spider http://localhost:80 || exit 1"]
       interval: 30s
@@ -109,6 +134,21 @@ services:
         limits:
           memory: 128M
           cpus: '0.25'
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
-volumes:
-  postgres_data:
+  # ── Optional: DB Admin (dev profile) ────────────
+  adminer:
+    profiles: ["dev"]
+    image: adminer:4.8.1
+    container_name: task-adminer
+    restart: unless-stopped
+    ports:
+      - "8081:8080"
+    networks:
+      - backend-net
+    depends_on:
+      - postgres

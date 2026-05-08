@@ -1,4 +1,30 @@
+# Dependency
 node_modules
-.env
-*.md
+npm-debug.log
+
+# IDE & OS
+.vscode
+.idea
+.DS_Store
+
+# VCS
 .git
+.gitignore
+
+# Env và secrets
+.env
+.env.*
+*.pem
+*.key
+
+# Test & coverage
+coverage
+.nyc_output
+
+# Docs (không cần trong runtime)
+*.md
+docs
+
+# Build artifacts
+dist
+build
