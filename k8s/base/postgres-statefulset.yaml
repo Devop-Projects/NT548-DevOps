@@ -1,39 +1,39 @@
-# ─── Headless Service ───
-apiVersion: v1
-kind: Service
-metadata:
-  name: postgres-headless
-  namespace: task-manager-dev
-  labels:
-    app: postgres
-spec:
-  clusterIP: None              # ← Headless
-  selector:
-    app: postgres
-  ports:
-  - name: postgres
-    port: 5432
-    targetPort: 5432
+# # ─── Headless Service ───
+# apiVersion: v1
+# kind: Service
+# metadata:
+#   name: postgres-headless
+#   namespace: task-manager-dev
+#   labels:
+#     app: postgres
+# spec:
+#   clusterIP: None              # ← Headless
+#   selector:
+#     app: postgres
+#   ports:
+#   - name: postgres
+#     port: 5432
+#     targetPort: 5432
 
----
-# ─── ClusterIP Service (cho app dễ connect) ───
-apiVersion: v1
-kind: Service
-metadata:
-  name: postgres
-  namespace: task-manager-dev
-  labels:
-    app: postgres
-spec:
-  type: ClusterIP
-  selector:
-    app: postgres
-  ports:
-  - name: postgres
-    port: 5432
-    targetPort: 5432
+# ---
+# # ─── ClusterIP Service (cho app dễ connect) ───
+# apiVersion: v1
+# kind: Service
+# metadata:
+#   name: postgres
+#   namespace: task-manager-dev
+#   labels:
+#     app: postgres
+# spec:
+#   type: ClusterIP
+#   selector:
+#     app: postgres
+#   ports:
+#   - name: postgres
+#     port: 5432
+#     targetPort: 5432
 
----
+# ---
 # ─── StatefulSet ───
 apiVersion: apps/v1
 kind: StatefulSet

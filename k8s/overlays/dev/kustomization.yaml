@@ -1,0 +1,43 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Reference base (relative path)
+resources:
+- ../../base
+
+# ─── Dev-specific image tags (có thể khác base) ───
+# images:
+# - name: task-manager-backend
+#   newTag: dev-latest
+
+# ─── Patches: override base cho dev ───
+patches:
+
+# Reduce backend replicas xuống 1 cho dev (tiết kiệm tài nguyên)
+- target:
+    kind: Deployment
+    name: backend
+  patch: |-
+    - op: replace
+      path: /spec/replicas
+      value: 1
+
+# Reduce frontend replicas
+- target:
+    kind: Deployment
+    name: frontend
+  patch: |-
+    - op: replace
+      path: /spec/replicas
+      value: 1
+
+# ─── Override ConfigMap LOG_LEVEL = debug cho dev ───
+# LƯU Ý: Vì dùng configMapGenerator, không patch trực tiếp được.
+# Cách đúng: Override bằng configMapGenerator trong overlay (xem dưới)
+
+# ─── ConfigMap merge (override LOG_LEVEL) ───
+configMapGenerator:
+- name: backend-config
+  behavior: merge        # ← QUAN TRỌNG: merge với base, không replace
+  literals:
+  - LOG_LEVEL=debug      # Override LOG_LEVEL từ info → debug

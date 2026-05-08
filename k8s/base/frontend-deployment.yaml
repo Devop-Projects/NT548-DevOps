@@ -38,16 +38,3 @@ spec:
           periodSeconds: 10
           failureThreshold: 2
 
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: frontend
-spec:
-  internalTrafficPolicy: Local
-  type: ClusterIP
-  selector:
-    app: frontend
-  ports:
-  - port: 80
-    targetPort: 8080
