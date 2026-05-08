@@ -1,0 +1,38 @@
+# .github/workflows/hello.yml
+#
+# Workflow đầu tiên — mục đích: hiểu cấu trúc, không làm gì hữu ích.
+
+name: Hello World
+
+# Trigger: chạy khi push lên bất kỳ branch nào
+on:
+  push:
+  workflow_dispatch:    # cho phép trigger manual từ UI
+
+jobs:
+  greet:
+    name: Say hello
+    runs-on: ubuntu-latest    # dùng runner Ubuntu của GitHub
+
+    steps:
+      # Step 1: Lấy code về (gần như mọi workflow đều cần)
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Step 2: In thông tin runner
+      - name: Show runner info
+        run: |
+          echo "Hello from GitHub Actions!"
+          echo "Running on: $(uname -a)"
+          echo "Working directory: $(pwd)"
+          echo "Files in repo:"
+          ls -la
+
+      # Step 3: Dùng biến môi trường có sẵn của GitHub
+      - name: Show GitHub context
+        run: |
+          echo "Repository: ${{ github.repository }}"
+          echo "Branch: ${{ github.ref_name }}"
+          echo "Commit SHA: ${{ github.sha }}"
+          echo "Triggered by: ${{ github.actor }}"
+          echo "Event: ${{ github.event_name }}"
