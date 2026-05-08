@@ -1,45 +1,7 @@
-# # ─── Headless Service ───
-# apiVersion: v1
-# kind: Service
-# metadata:
-#   name: postgres-headless
-#   namespace: task-manager-dev
-#   labels:
-#     app: postgres
-# spec:
-#   clusterIP: None              # ← Headless
-#   selector:
-#     app: postgres
-#   ports:
-#   - name: postgres
-#     port: 5432
-#     targetPort: 5432
-
-# ---
-# # ─── ClusterIP Service (cho app dễ connect) ───
-# apiVersion: v1
-# kind: Service
-# metadata:
-#   name: postgres
-#   namespace: task-manager-dev
-#   labels:
-#     app: postgres
-# spec:
-#   type: ClusterIP
-#   selector:
-#     app: postgres
-#   ports:
-#   - name: postgres
-#     port: 5432
-#     targetPort: 5432
-
-# ---
-# ─── StatefulSet ───
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: postgres
-  namespace: task-manager-dev
   labels:
     app.kubernetes.io/name: postgres
     app.kubernetes.io/part-of: task-manager
@@ -49,19 +11,49 @@ spec:
   selector:
     matchLabels:
       app: postgres
-  
   template:
     metadata:
       labels:
         app: postgres
     spec:
-      terminationGracePeriodSeconds: 60   # DB cần thời gian flush
+      terminationGracePeriodSeconds: 60
+
+      # ─── RBAC ───
+      serviceAccountName: postgres-sa
+      automountServiceAccountToken: false
+
+      # ─── Pod-level Security Context ───
+      # postgres:15-alpine có sẵn user "postgres" UID=70 (Alpine convention)
+      # Verify: docker run --rm postgres:15-alpine id postgres
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70                # postgres user (Alpine version)
+        runAsGroup: 70
+        fsGroup: 70                  # QUAN TRỌNG: PVC sẽ thuộc group này
+                                     # → postgres user có quyền ghi data
+
       containers:
       - name: postgres
         image: postgres:15-alpine
         ports:
         - name: postgres
           containerPort: 5432
+
+        # ─── Container-level Security Context ───
+        # LƯU Ý: KHÔNG dùng readOnlyRootFilesystem cho database!
+        # Postgres BẮT BUỘC ghi vào nhiều paths:
+        #   - /var/lib/postgresql/data (data files - đã có PVC)
+        #   - /var/run/postgresql (lock files)
+        #   - /tmp (temp sort files)
+        # Thay vì cấm hoàn toàn, ta chỉ drop capabilities + seccomp
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false      # Database cần ghi - không khả thi
+          capabilities:
+            drop: ["ALL"]                    # Drop tất cả - postgres không cần
+          seccompProfile:
+            type: RuntimeDefault
+
         env:
         - name: POSTGRES_DB
           value: taskdb
@@ -72,51 +64,48 @@ spec:
             secretKeyRef:
               name: postgres-secrets
               key: POSTGRES_PASSWORD
-        # PGDATA trong subdir để tránh lost+found issue
         - name: PGDATA
           value: /var/lib/postgresql/data/pgdata
-        
+
         volumeMounts:
         - name: data
           mountPath: /var/lib/postgresql/data
-        
+
         resources:
-          requests: {cpu: 200m, memory: 256Mi}
-          limits: {cpu: 1000m, memory: 1Gi}
-        
+          requests:
+            cpu: 200m
+            memory: 256Mi
+          limits:
+            cpu: 1000m
+            memory: 1Gi
+
         # ─── PROBES ───
-        # Startup: cho Postgres khởi động (slow init khi PVC mới)
         startupProbe:
           exec:
             command: ["pg_isready", "-U", "taskuser", "-d", "taskdb"]
           periodSeconds: 10
-          failureThreshold: 30        # 30 × 10s = 5 phút
-        
-        # Liveness: process alive (postgres) — không check DB query
-        # Vì Postgres bị stuck thì query đơn giản cũng treo
-        # Tip: dùng pg_isready (chỉ ping process), KHÔNG dùng `psql -c "SELECT 1"`
+          failureThreshold: 30        # 30 × 10s = 5 phút (initdb chậm)
+
         livenessProbe:
           exec:
             command: ["pg_isready", "-U", "taskuser"]
           periodSeconds: 30
           timeoutSeconds: 10
           failureThreshold: 3
-        
-        # Readiness: cùng pg_isready (DB sẵn sàng accept connection)
+
         readinessProbe:
           exec:
             command: ["pg_isready", "-U", "taskuser", "-d", "taskdb"]
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 3
-  
-  # ─── PVC TEMPLATE ───
+
   volumeClaimTemplates:
   - metadata:
       name: data
     spec:
       accessModes: [ReadWriteOnce]
-      storageClassName: standard      # Default StorageClass của kind
+      storageClassName: standard
       resources:
         requests:
           storage: 5Gi
