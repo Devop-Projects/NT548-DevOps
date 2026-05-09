@@ -1,0 +1,52 @@
+# .gitleaks.toml
+# Config cho Gitleaks scan trên repo NT548 Task Manager
+
+title = "Gitleaks config for nt548-devops"
+
+# ─── Inherit default rules + add custom ───
+[extend]
+useDefault = true
+
+# ─── Allowlist (skip these files/patterns) ───
+[allowlist]
+description = "Allow example files, test secrets, docs"
+
+# Files/folders không scan
+paths = [
+    '''.*\.env\.example$''',
+    '''.*\.example$''',
+    '''docs/.*''',
+    '''.*\.test\.js$''',
+    '''.*\.test\.jsx$''',
+    '''tests/.*''',
+    '''.*\.md$''',
+    '''.gitleaks\.toml$''',
+    '''package-lock\.json$''',
+    '''node_modules/.*''',
+    '''coverage/.*''',
+    '''dist/.*''',
+]
+
+# Regex patterns được phép (test secrets, placeholders)
+regexes = [
+    '''dev-secret-change-in-production''',
+    '''ci-test-secret-not-used-in-prod''',
+    '''test-secret-for-jest''',
+    '''your-super-secret-key-here''',
+    '''change-this-strong-password''',
+    '''change-this-min-32-chars-secret-key''',
+    '''temporary-dev-secret-do-not-use-in-prod''',
+    '''taskpassword-strong''',
+    '''fake:fake@localhost''',
+]
+
+# Stop words — nếu match có chứa các string này thì bỏ qua
+stopwords = [
+    "example",
+    "test",
+    "fake",
+    "dummy",
+    "placeholder",
+    "your-",
+    "change-this",
+]

@@ -363,3 +363,30 @@ jobs:
           cache-from: type=gha
           build-args: |
             VITE_API_URL=/api
+            
+  # ===========================================================================
+  # JOB: Secret scan với Gitleaks
+  # ===========================================================================
+  # Quét git history để tìm credentials bị leak (AWS keys, JWT, SSH keys, ...)
+  # ===========================================================================
+  secret-scan:
+    name: Gitleaks secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    permissions:
+      contents: read
+      security-events: write    # Upload SARIF
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0    # Cần full history để scan toàn bộ git log
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # GITLEAKS_LICENSE chỉ cần cho organization plan, repo cá nhân không cần
+        
