@@ -25,6 +25,7 @@ paths = [
     '''node_modules/.*''',
     '''coverage/.*''',
     '''dist/.*''',
+    '''sonar-project.properties''',
 ]
 
 # Regex patterns được phép (test secrets, placeholders)
@@ -38,6 +39,8 @@ regexes = [
     '''temporary-dev-secret-do-not-use-in-prod''',
     '''taskpassword-strong''',
     '''fake:fake@localhost''',
+    '''sonar\.projectKey=''',
+    '''sonar\.organization=''',
 ]
 
 # Stop words — nếu match có chứa các string này thì bỏ qua
