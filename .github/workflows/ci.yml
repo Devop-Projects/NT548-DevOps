@@ -86,32 +86,73 @@ jobs:
       - run: npm ci
 
       - run: npm test
+        
+       # ← THÊM: Upload frontend coverage để sast-scan dùng
+      - name: Upload frontend coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage
+          path: app/mono/frontend/coverage/
+          retention-days: 7
+
 # ─── Job 3: Build backend Docker image ────────────────────
+  # ─── Job: Build backend image với security scan ────────────
   build-backend:
     name: Build backend image
-    needs: backend-test                 # chỉ build khi test pass
+    needs: backend-test                  # chỉ build khi test pass
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
       packages: write
+      security-events: write             # ← THÊM: cho upload SARIF
 
     steps:
       - uses: actions/checkout@v4
 
-      # Setup Buildx — Docker BuildKit, hỗ trợ caching tiên tiến
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # Login Docker Hub
+      # ─── STEP 1: Build LOCAL image (chưa push) ───
+      - name: Build image (local, for scanning)
+        uses: docker/build-push-action@v5
+        with:
+          context: ./app/mono/backend
+          file: ./app/mono/backend/Dockerfile
+          push: false                    # KHÔNG push, chỉ build local
+          tags: nt548-backend:scan       # Tag tạm để scan
+          load: true                     # Load vào local Docker daemon
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # ─── STEP 2: Scan image với Trivy ───
+      - name: Trivy image scan
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: 'nt548-backend:scan'
+          format: 'sarif'
+          output: 'trivy-image-backend.sarif'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'                 # Report-only (giai đoạn đầu)
+
+      # ─── STEP 3: Upload SARIF lên GitHub Security ───
+      - name: Upload Trivy image SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-image-backend.sarif'
+          category: 'trivy-image-backend'
+
+      # ─── STEP 4: Login Docker Hub (chỉ trên main) ───
       - name: Login to Docker Hub
-        # Chỉ login + push trên main (không push trên PR)
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # Sinh tags + labels tự động
+      # ─── STEP 5: Generate multi-tag metadata ───
       - name: Extract image metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -123,18 +164,17 @@ jobs:
             type=ref,event=branch
             type=semver,pattern={{version}}
 
-      # Build + push (push chỉ trên main)
-      - name: Build and push image
+      # ─── STEP 6: Push image (chỉ trên main, sau khi scan OK) ───
+      - name: Push image with multiple tags
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: docker/build-push-action@v5
         with:
           context: ./app/mono/backend
           file: ./app/mono/backend/Dockerfile
-          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          # Cache layers giữa các run → build nhanh hơn
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha             # Reuse cache → build nhanh
 
   # ─── Job 4: Build frontend Docker image ───────────────────
   build-frontend:
@@ -205,3 +245,36 @@ jobs:
         with:
           sarif_file: 'trivy-fs-results.sarif'
           category: 'trivy-fs'
+
+  # ─── Job: SAST với SonarCloud ──────────────────────────────
+  sast-scan:
+    name: SonarCloud SAST scan
+    runs-on: ubuntu-latest
+    needs: [backend-test, frontend-test]   # cần coverage từ test jobs
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          # SonarCloud cần full git history để analyze blame
+          fetch-depth: 0
+
+      # Download coverage artifacts từ test jobs
+      - name: Download backend coverage
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-coverage
+          path: app/mono/backend/coverage/
+
+      - name: Download frontend coverage
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-coverage
+          path: app/mono/frontend/coverage/
+
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarcloud-github-action@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}    # GitHub auto-provide
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
