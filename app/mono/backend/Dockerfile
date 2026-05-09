@@ -3,7 +3,7 @@
 # ============================================================================
 # Stage 1: Dependencies — cài node_modules (production only)
 # ============================================================================
-FROM node:18.19.0-alpine3.19 AS deps
+FROM node:23.3.0-alpine3.19 AS deps
 
 WORKDIR /app
 
@@ -19,7 +19,7 @@ RUN --mount=type=cache,target=/root/.npm \
 # ============================================================================
 # Stage 2: Runtime — image cuối, chỉ chứa những gì cần để chạy
 # ============================================================================
-FROM node:18.19.0-alpine3.19 AS runtime
+FROM node:23.3.0-alpine3.19 AS runtime
 
 
 # Production environment
