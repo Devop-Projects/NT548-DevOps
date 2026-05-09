@@ -1,0 +1,74 @@
+# # .github/workflows/ci.yml
+# #
+# # CI Pipeline cho NT548 Task Manager App.
+# # Strategy: incremental — bắt đầu với lint+test, dần thêm build+push.
+
+# name: CI
+
+# # Trigger
+# on:
+#   push:
+#     branches: [main, develop, vantai]
+#     paths-ignore:                      # đổi docs không trigger
+#       - '**.md'
+#       - 'docs/**'
+#   pull_request:
+#     branches: [main]
+#   workflow_dispatch:                   # cho phép trigger manual
+
+# # Concurrency: hủy run cũ nếu push commit mới trên cùng branch
+# # → tiết kiệm compute, tránh waste pipeline cho commit đã obsolete
+# concurrency:
+#   group: ci-${{ github.ref }}
+#   cancel-in-progress: true
+
+# jobs:
+#   # ─── Job 1: Backend lint + test ────────────────────────────
+#   backend-test:
+#     name: Backend lint and test
+#     runs-on: ubuntu-latest
+
+#     # Set working-directory mặc định cho mọi step
+#     defaults:
+#       run:
+#         working-directory: ./app/mono/backend
+
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v4
+
+#       - name: Setup Node.js
+#         uses: actions/setup-node@v4
+#         with:
+#           node-version: '18'
+#           # Tự động cache npm dependencies dựa trên package-lock.json
+#           cache: 'npm'
+#           cache-dependency-path: app/mono/backend/package-lock.json
+
+#       - name: Install dependencies
+#         # `npm ci` thay `npm install` — nhanh hơn, deterministic, dùng package-lock.json
+#         run: npm ci
+
+#       - name: Run ESLint
+#         run: npm run lint
+
+#       - name: Run Jest tests
+#         run: npm test
+#         env:
+#           # Set env vars để test không fail vì validateConfig
+#           NODE_ENV: test
+#           JWT_SECRET: ci-test-secret-not-used-in-prod
+#           JWT_EXPIRES_IN: 1h
+#           DATABASE_URL: postgres://fake:fake@localhost:5432/fake
+#           PORT: 3000
+
+#       - name: Upload coverage report
+#         if: always()    # upload kể cả khi test fail (để xem coverage)
+#         uses: actions/upload-artifact@v4
+#         with:
+#           name: backend-coverage
+#           path: app/mono/backend/coverage/
+#           retention-days: 7
+
+#   # ─── Job 2: Frontend lint + test ───────────────────────────
+#   # (sẽ thêm sau khi xong backend)

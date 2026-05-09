@@ -43,3 +43,8 @@ k8s/base/script.sh
 *-secret-plain.yaml
 
 *.unsealed.yaml
+
+# Test coverage reports
+coverage/
+*.lcov
+.nyc_output/
