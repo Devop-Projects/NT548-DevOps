@@ -6,6 +6,9 @@
   "scripts": {
     "start": "node src/app.js",
     "dev": "nodemon src/app.js",
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix",
+    "test": "jest --coverage --passWithNoTests",
     "migrate": "node src/scripts/migrate.js",
     "migrate:undo": "node src/scripts/migrate-undo.js",
     "seed": "node src/scripts/seed.js"
@@ -22,7 +25,28 @@
     "sequelize": "^6.37.3"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.3.0",
+    "globals": "^17.6.0",
+    "jest": "^30.4.2",
     "nodemon": "^3.1.7",
-    "pino-pretty": "^11.3.0"
+    "pino-pretty": "^11.3.0",
+    "supertest": "^7.2.2"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "testMatch": ["**/tests/**/*.test.js"],
+    "collectCoverageFrom": [
+      "src/**/*.js",
+      "!src/scripts/**",
+      "!src/app.js"
+    ],
+    "coverageThreshold": {
+      "global": {
+        "lines": 50,
+        "functions": 50
+      }
+    }
   }
+
 }

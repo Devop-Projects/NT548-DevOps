@@ -95,7 +95,7 @@ app.use((req, res) => {
 });
 
 // Global error handler (catches errors thrown in async handlers)
-app.use((err, req, res, next) => {
+app.use((err, req, res, _next) => {
   logger.error({ err, path: req.path }, 'Unhandled error in request');
   res.status(500).json({ message: 'Internal server error' });
 });
