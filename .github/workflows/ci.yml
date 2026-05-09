@@ -380,8 +380,9 @@ jobs:
 
       - name: Install Gitleaks
         run: |
-          wget https://github.com/gitleaks/gitleaks/releases/latest/download/gitleaks_linux_x64.tar.gz
-          tar -xzf gitleaks_linux_x64.tar.gz
+          VERSION=8.18.4
+          wget https://github.com/gitleaks/gitleaks/releases/download/v${VERSION}/gitleaks_${VERSION}_linux_x64.tar.gz
+          tar -xzf gitleaks_${VERSION}_linux_x64.tar.gz
           sudo mv gitleaks /usr/local/bin/
 
       - name: Run Gitleaks scan
