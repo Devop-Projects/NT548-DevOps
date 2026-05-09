@@ -1,34 +1,31 @@
 # .github/workflows/ci.yml
-#
-# CI Pipeline cho NT548 Task Manager App.
-# Strategy: incremental — bắt đầu với lint+test, dần thêm build+push.
-
 name: CI
 
-# Trigger
 on:
   push:
     branches: [main, develop, vantai]
-    paths-ignore:                      # đổi docs không trigger
+    paths-ignore:
       - '**.md'
       - 'docs/**'
   pull_request:
     branches: [main]
-  workflow_dispatch:                   # cho phép trigger manual
+  workflow_dispatch:
 
-# Concurrency: hủy run cũ nếu push commit mới trên cùng branch
-# → tiết kiệm compute, tránh waste pipeline cho commit đã obsolete
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
+
+# ─── Định nghĩa env chung ───────────────────────────────────
+env:
+  NODE_VERSION: ${{vars.NODE_VERSION}}    # Single source of truth cho Node version
 
 jobs:
   # ─── Job 1: Backend lint + test ────────────────────────────
   backend-test:
     name: Backend lint and test
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
-    # Set working-directory mặc định cho mọi step
     defaults:
       run:
         working-directory: ./app/mono/backend
@@ -40,13 +37,11 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          # Tự động cache npm dependencies dựa trên package-lock.json
+          node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
           cache-dependency-path: app/mono/backend/package-lock.json
 
       - name: Install dependencies
-        # `npm ci` thay `npm install` — nhanh hơn, deterministic, dùng package-lock.json
         run: npm ci
 
       - name: Run ESLint
@@ -55,7 +50,6 @@ jobs:
       - name: Run Jest tests
         run: npm test
         env:
-          # Set env vars để test không fail vì validateConfig
           NODE_ENV: test
           JWT_SECRET: ci-test-secret-not-used-in-prod
           JWT_EXPIRES_IN: 1h
@@ -63,7 +57,7 @@ jobs:
           PORT: 3000
 
       - name: Upload coverage report
-        if: always()    # upload kể cả khi test fail (để xem coverage)
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: backend-coverage
@@ -71,11 +65,10 @@ jobs:
           retention-days: 7
 
   # ─── Job 2: Frontend lint + test ───────────────────────────
-  # (sẽ thêm sau khi xong backend)
-  # ─── Job 2: Frontend lint + test ───────────────────────────
   frontend-test:
     name: Frontend lint and test
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     defaults:
       run:
@@ -86,7 +79,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
           cache-dependency-path: app/mono/frontend/package-lock.json
 
@@ -181,3 +174,34 @@ jobs:
           cache-to: type=gha,mode=max
           build-args: |
             VITE_API_URL=/api
+  # ─── Job: SCA với Trivy filesystem scan ────────────────────
+  sca-scan:
+    name: Trivy filesystem scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    # Permissions cần thiết để upload SARIF lên GitHub Security tab
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Trivy filesystem scan
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'                  # Scan toàn bộ repo
+          format: 'sarif'                # Format chuẩn cho GitHub
+          output: 'trivy-fs-results.sarif'
+          severity: 'CRITICAL,HIGH'      # Chỉ quan tâm CRITICAL/HIGH
+          exit-code: '0'                  # Report-only (chưa block pipeline)
+
+      - name: Upload Trivy SARIF report
+        if: always()                      # Upload kể cả khi scan có lỗi
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-fs-results.sarif'
+          category: 'trivy-fs'
