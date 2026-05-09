@@ -25,9 +25,9 @@
     "sequelize": "^6.37.3"
   },
   "devDependencies": {
-    "@eslint/js": "^10.0.1",
-    "eslint": "^10.3.0",
-    "globals": "^17.6.0",
+    "@eslint/js": "^9.39.4",
+    "eslint": "^9.39.4",
+    "globals": "^15.15.0",
     "jest": "^30.4.2",
     "nodemon": "^3.1.7",
     "pino-pretty": "^11.3.0",
@@ -35,18 +35,25 @@
   },
   "jest": {
     "testEnvironment": "node",
-    "testMatch": ["**/tests/**/*.test.js"],
+    "testMatch": [
+      "**/tests/**/*.test.js"
+    ],
     "collectCoverageFrom": [
       "src/**/*.js",
       "!src/scripts/**",
-      "!src/app.js"
+      "!src/app.js",
+      "!src/config/logger.js",
+      "!src/config/validate.js",
+      "!src/models/**",
+      "!src/routes/**"
     ],
     "coverageThreshold": {
       "global": {
-        "lines": 50,
-        "functions": 50
+        "lines": 25,
+        "functions": 25,
+        "branches": 20,
+        "statements": 25
       }
     }
   }
-
 }

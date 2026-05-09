@@ -72,3 +72,112 @@ jobs:
 
   # ─── Job 2: Frontend lint + test ───────────────────────────
   # (sẽ thêm sau khi xong backend)
+  # ─── Job 2: Frontend lint + test ───────────────────────────
+  frontend-test:
+    name: Frontend lint and test
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ./app/mono/frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: app/mono/frontend/package-lock.json
+
+      - run: npm ci
+
+      - run: npm test
+# ─── Job 3: Build backend Docker image ────────────────────
+  build-backend:
+    name: Build backend image
+    needs: backend-test                 # chỉ build khi test pass
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Setup Buildx — Docker BuildKit, hỗ trợ caching tiên tiến
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Login Docker Hub
+      - name: Login to Docker Hub
+        # Chỉ login + push trên main (không push trên PR)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # Sinh tags + labels tự động
+      - name: Extract image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ secrets.DOCKERHUB_USERNAME }}/nt548-backend
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,prefix=,format=short
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+
+      # Build + push (push chỉ trên main)
+      - name: Build and push image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./app/mono/backend
+          file: ./app/mono/backend/Dockerfile
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Cache layers giữa các run → build nhanh hơn
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ─── Job 4: Build frontend Docker image ───────────────────
+  build-frontend:
+    name: Build frontend image
+    needs: frontend-test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ secrets.DOCKERHUB_USERNAME }}/nt548-frontend
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,prefix=,format=short
+            type=ref,event=branch
+
+      - uses: docker/build-push-action@v5
+        with:
+          context: ./app/mono/frontend
+          file: ./app/mono/frontend/Dockerfile
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            VITE_API_URL=/api
