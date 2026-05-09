@@ -25,7 +25,7 @@ RUN npm run build
 # ============================================================================
 # Stage 3: Runtime — Sử dụng Nginx (Non-root) để serve file
 # ============================================================================
-FROM nginx:1.25.3-alpine AS runtime
+FROM nginx:1.29.8-alpine AS runtime
 
 # Thiết lập quyền non-root cho Nginx (vì port 80 yêu cầu quyền root)
 # Chúng ta sẽ chuyển sang chạy ở cổng 8080
