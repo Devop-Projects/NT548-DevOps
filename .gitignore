@@ -48,3 +48,19 @@ k8s/base/script.sh
 coverage/
 *.lcov
 .nyc_output/
+
+# Terraform
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+
+# Secret
+*.tfvars         # ⚠️ Chứa thể chứa sensitive (đôi khi commit *.tfvars là OK nếu không có secret)
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
