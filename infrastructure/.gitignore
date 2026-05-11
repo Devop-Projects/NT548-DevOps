@@ -16,3 +16,8 @@ override.tf.json
 # Sensitive
 *.tfvars.local
 *.secret.tfvars
+*.tfvars.local.json
+*.secret.tfvars.json
+
+tfplan
+*.tfplan
