@@ -1,0 +1,123 @@
+# .github/dependabot.yml
+# Auto-update dependencies cho NT548 Task Manager
+# Docs: https://docs.github.com/en/code-security/dependabot/dependabot-version-updates
+
+version: 2
+
+updates:
+  # ───────────────────────────────────────────────────────────
+  # 1. Backend npm dependencies
+  # ───────────────────────────────────────────────────────────
+  - package-ecosystem: "npm"
+    directory: "/app/mono/backend"
+    schedule:
+      interval: "monthly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Ho_Chi_Minh"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "backend"
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(dev-deps)"
+      include: "scope"
+    # Group nhỏ updates để tránh spam PR
+    groups:
+      production-dependencies:
+        dependency-type: "production"
+        update-types:
+          - "minor"
+          - "patch"
+      dev-dependencies:
+        dependency-type: "development"
+        update-types:
+          - "minor"
+          - "patch"
+    # Ignore packages cần update thủ công (vd: major version có breaking)
+    ignore:
+      - dependency-name: "express"
+        update-types: ["version-update:semver-major"]
+
+  # ───────────────────────────────────────────────────────────
+  # 2. Frontend npm dependencies
+  # ───────────────────────────────────────────────────────────
+  - package-ecosystem: "npm"
+    directory: "/app/mono/frontend"
+    schedule:
+      interval: "monthly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Ho_Chi_Minh"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "frontend"
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(dev-deps)"
+      include: "scope"
+    groups:
+      production-dependencies:
+        dependency-type: "production"
+        update-types:
+          - "minor"
+          - "patch"
+      dev-dependencies:
+        dependency-type: "development"
+        update-types:
+          - "minor"
+          - "patch"
+    # React major version cần test kỹ → ignore auto major
+    ignore:
+      - dependency-name: "react"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react-dom"
+        update-types: ["version-update:semver-major"]
+
+  # ───────────────────────────────────────────────────────────
+  # 3. GitHub Actions versions
+  # ───────────────────────────────────────────────────────────
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "ci"
+    commit-message:
+      prefix: "chore(ci)"
+    groups:
+      actions-updates:
+        patterns:
+          - "*"
+
+  # ───────────────────────────────────────────────────────────
+  # 4. Docker base images - Backend
+  # ───────────────────────────────────────────────────────────
+  - package-ecosystem: "docker"
+    directory: "/app/mono/backend"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "docker"
+    commit-message:
+      prefix: "chore(docker)"
+
+  # ───────────────────────────────────────────────────────────
+  # 5. Docker base images - Frontend
+  # ───────────────────────────────────────────────────────────
+  - package-ecosystem: "docker"
+    directory: "/app/mono/frontend"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "docker"
+    commit-message:
+      prefix: "chore(docker)"

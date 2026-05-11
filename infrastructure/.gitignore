@@ -1,0 +1,23 @@
+# infrastructure/.gitignore
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl    # Đôi khi commit, đôi khi không (chọn convention team)
+*.tfplan
+crash.log
+crash.*.log
+
+# Override files
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Sensitive
+*.tfvars.local
+*.secret.tfvars
+*.tfvars.local.json
+*.secret.tfvars.json
+
+tfplan
+*.tfplan
