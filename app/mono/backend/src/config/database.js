@@ -60,15 +60,43 @@ const databaseUrl = buildDatabaseUrl();
 const safeUrl = databaseUrl.replace(/:([^:@]+)@/, ':***@');
 logger.info({ databaseUrl: safeUrl }, 'Database connection target');
 
+// Determine SSL config based on DB_SSL env var
+// - DB_SSL=true:    Enable SSL with rejectUnauthorized=false (works with RDS)
+// - DB_SSL=verify:  Enable SSL with strict cert verification (production)
+// - DB_SSL=false (default): No SSL (for local docker-compose)
+//
+// AWS RDS requires SSL by default (rds.force_ssl=1).
+// rejectUnauthorized=false: accept RDS cert without CA bundle.
+// For strict verification, mount RDS CA bundle and set rejectUnauthorized=true.
+const dbSslMode = (process.env.DB_SSL || 'false').toLowerCase();
+let sslConfig = false;
+
+if (dbSslMode === 'true') {
+  sslConfig = {
+    require: true,
+    rejectUnauthorized: false,
+  };
+  logger.info('Database SSL enabled (no strict verification)');
+} else if (dbSslMode === 'verify') {
+  sslConfig = {
+    require: true,
+    rejectUnauthorized: true,
+  };
+  logger.info('Database SSL enabled (strict verification)');
+}
+
 const sequelize = new Sequelize(databaseUrl, {
   dialect: 'postgres',
 
-  // Use pino logger for SQL queries (only in debug mode)
+  // SSL config (must be inside dialectOptions for pg driver)
+  dialectOptions: {
+    ssl: sslConfig,
+  },
+
   logging: process.env.LOG_LEVEL === 'debug'
     ? (msg) => logger.debug({ sql: msg }, 'SQL query')
     : false,
 
-  // Connection pool tuning
   pool: {
     max: parseInt(process.env.DB_POOL_MAX || '10', 10),
     min: parseInt(process.env.DB_POOL_MIN || '2', 10),
@@ -76,7 +104,6 @@ const sequelize = new Sequelize(databaseUrl, {
     idle: 10000,
   },
 
-  // Retry on connection failure (transient network issues)
   retry: {
     max: 3,
     match: [
