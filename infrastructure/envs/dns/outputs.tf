@@ -31,3 +31,13 @@ output "acm_certificate_arn" {
 output "acm_status" {
   value = aws_acm_certificate.main.status
 }
+# ─── A record info ─────────────────────────────
+output "app_dns_record" {
+  description = "DNS A record cho app"
+  value       = aws_route53_record.app.fqdn
+}
+
+output "app_alb_dns" {
+  description = "ALB DNS name (target của A record)"
+  value       = data.aws_lb.app.dns_name
+}

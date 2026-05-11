@@ -1,0 +1,28 @@
+# k8s/overlays/aws/backend-deployment-patch.yaml
+#
+# Strategic Merge Patch cho backend Deployment.
+# Override: image (local → Docker Hub) + env (postgres-secrets → db-credentials).
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: task-manager-dev
+spec:
+  template:
+    spec:
+      containers:
+      - name: backend
+        image: doanvantai/nt548-backend:e4194db
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: DB_PASSWORD
+        - name: DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: DB_USERNAME

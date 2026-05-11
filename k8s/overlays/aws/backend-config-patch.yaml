@@ -1,0 +1,9 @@
+# Pattern A: backend-config-patch.yaml (HYPOTHETICAL)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-config
+data:
+  DB_HOST: "devops-dev-db.xxx.rds.amazonaws.com"
+  DB_NAME: "appdb"
+  DB_USER: "appuser"

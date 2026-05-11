@@ -1,0 +1,109 @@
+# k8s/overlays/aws/kustomization.yaml
+#
+# Overlay cho AWS EKS deployment.
+#
+# Mục đích:
+# 1. Inherit base resources (deployment, service, RBAC, ...)
+# 2. Add AWS-specific: ClusterSecretStore, ExternalSecret, ALB Ingress
+# 3. Override: ConfigMap (DB → RDS), images (local → Docker Hub)
+# 4. Disable in-cluster Postgres (scale=0, dùng RDS)
+# 5. Patch migration Job (image + secret)
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Namespace đích cho mọi resource
+namespace: task-manager-dev
+
+# ─────────────────────────────────────────────────────────
+# 1. RESOURCES
+# ─────────────────────────────────────────────────────────
+# Inherit base + add 3 AWS-specific resources
+resources:
+- ../../base                  # Tham chiếu base folder
+- secret-store.yaml           # ClusterSecretStore (cluster-scoped)
+- external-secret.yaml        # ExternalSecret → tạo K8s Secret db-credentials
+- ingress-alb.yaml            # ALB Ingress (name: task-manager-aws, khác base)
+
+# ─────────────────────────────────────────────────────────
+# 2. IMAGE OVERRIDE
+# ─────────────────────────────────────────────────────────
+# Kustomize tự scan mọi Deployment/StatefulSet/Job và thay image
+# Match theo `name` (image base, không có registry)
+images:
+- name: task-manager-backend
+  newName: doanvantai/nt548-backend
+  newTag: e4194db
+
+- name: task-manager-frontend
+  newName: doanvantai/nt548-frontend
+  newTag: e4194db
+
+# ─────────────────────────────────────────────────────────
+# 3. CONFIGMAP MERGE — override DB config
+# ─────────────────────────────────────────────────────────
+# Base dùng configMapGenerator → ConfigMap có hash suffix
+# Overlay phải dùng cùng name + behavior:merge để override
+configMapGenerator:
+- name: backend-config
+  behavior: merge             # ← QUAN TRỌNG: merge không replace
+  literals:
+  - DB_HOST=devops-thesis-dev-db.chi0awig8v33.ap-southeast-1.rds.amazonaws.com   # Thay vì "postgres" (in-cluster)
+  - DB_PORT=5432
+  - DB_NAME=appdb                       # Thay vì "taskdb"
+  - DB_USER=appuser                     # Fallback (sẽ bị env override)
+  - DB_SSL=true
+
+# ─────────────────────────────────────────────────────────
+# 4. PATCHES
+# ─────────────────────────────────────────────────────────
+patches:
+
+# Patch 1: Backend — image + env DB credentials
+- path: backend-deployment-patch.yaml
+  target:
+    kind: Deployment
+    name: backend
+
+# Patch 2: Frontend — image
+- path: frontend-deployment-patch.yaml
+  target:
+    kind: Deployment
+    name: frontend
+
+# Patch 3: Migration Job — image + secret reference
+- path: migrate-job-patch.yaml
+  target:
+    kind: Job
+    name: db-migrate
+
+# Patch 4: Disable in-cluster Postgres (scale to 0)
+# JSON 6902 patch — đơn giản replace scalar
+- target:
+    kind: StatefulSet
+    name: postgres
+  patch: |-
+    - op: replace
+      path: /spec/replicas
+      value: 0
+
+# Patch 5: REMOVE base Ingress (nginx class) — không tồn tại trên EKS
+# AWS LB Controller webhook reject Ingress với class không tồn tại
+- target:
+    kind: Ingress
+    name: task-manager
+  patch: |-
+    $patch: delete
+    apiVersion: networking.k8s.io/v1
+    kind: Ingress
+    metadata:
+      name: task-manager
+      namespace: task-manager-dev
+# ─────────────────────────────────────────────────────────
+# 5. COMMON LABELS bổ sung cho overlay
+# ─────────────────────────────────────────────────────────
+labels:
+- pairs:
+    environment: aws-dev
+    cloud: aws
+  includeSelectors: false
