@@ -1,0 +1,135 @@
+# .github/workflows/iac-security.yml
+#
+# IaC Security Scanning Pipeline
+# Tools: tfsec, Checkov, Trivy IaC
+# Strategy: All soft-fail (report-only) for thesis dev
+# Production: change soft_fail=false to BLOCK merge on HIGH findings
+
+name: IaC Security
+
+on:
+  push:
+    branches: [main, develop, vantai]
+    paths:
+      - 'infrastructure/**'
+      - '.github/workflows/iac-security.yml'
+  pull_request:
+    paths:
+      - 'infrastructure/**'
+  workflow_dispatch:
+
+concurrency:
+  group: iac-security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ─── tfsec ────────────────────────────────────
+  tfsec:
+    name: tfsec scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      security-events: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run tfsec (SARIF for GitHub Security)
+        uses: aquasecurity/tfsec-sarif-action@v0.1.4
+        with:
+          working_directory: infrastructure
+          sarif_file: tfsec.sarif
+
+      - name: Upload tfsec SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: tfsec.sarif
+          category: tfsec
+
+      - name: tfsec PR comment
+        if: github.event_name == 'pull_request'
+        uses: aquasecurity/tfsec-pr-commenter-action@v1.3.1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          working_directory: infrastructure
+
+  # ─── Checkov ──────────────────────────────────
+  checkov:
+    name: Checkov scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Checkov
+        uses: bridgecrewio/checkov-action@master
+        with:
+          directory: infrastructure
+          framework: terraform
+          output_format: sarif
+          output_file_path: console,checkov.sarif
+          soft_fail: true
+          # Skip findings không relevant cho dev (must document):
+          # CKV_AWS_158: ensure CloudWatch Log Group is encrypted by KMS
+          # CKV_AWS_111: write access without constraint (dev policy)
+          skip_check: CKV_AWS_158,CKV_AWS_111,CKV_AWS_338
+
+      - name: Upload Checkov SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: checkov.sarif
+          category: checkov
+
+  # ─── Trivy IaC ────────────────────────────────
+  trivy-iac:
+    name: Trivy IaC config scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Trivy config scan
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: 'config'
+          scan-ref: 'infrastructure'
+          format: 'sarif'
+          output: 'trivy-iac.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+          exit-code: '0'
+
+      - name: Upload Trivy SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-iac.sarif
+          category: trivy-iac
+
+  # ─── Summary job ──────────────────────────────
+  summary:
+    name: Security Summary
+    runs-on: ubuntu-latest
+    needs: [tfsec, checkov, trivy-iac]
+    if: always()
+
+    steps:
+      - name: Print summary
+        run: |
+          echo "═══════════════════════════════════════════════"
+          echo "  IaC Security Scan Summary"
+          echo "═══════════════════════════════════════════════"
+          echo "✓ tfsec:     ${{ needs.tfsec.result }}"
+          echo "✓ Checkov:   ${{ needs.checkov.result }}"
+          echo "✓ Trivy IaC: ${{ needs.trivy-iac.result }}"
+          echo ""
+          echo "View detailed findings:"
+          echo "→ Security tab → Code scanning alerts"
