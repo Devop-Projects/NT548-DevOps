@@ -1,24 +1,36 @@
 # envs/rds/rds.tf
+#
+# RDS PostgreSQL 15 với:
+# - Secrets Manager auto-managed password
+# - Encryption at rest (KMS)
+# - Multi-AZ (toggle qua var)
+# - Enhanced Monitoring + CloudWatch logs
+#
+# Design decisions:
+# - Performance Insights: DISABLED cho dev (tiết kiệm ~$8/month)
+# - apply_immediately: TRUE cho dev (fast feedback)
+# - Multi-AZ: FALSE cho dev (single AZ tiết kiệm 50%)
 
 # ─── Security Group cho RDS ───────────────────────
 # Pattern: SG-to-SG reference (không hardcode IP)
-# RDS chỉ accept từ EKS worker SG — không từ Internet, không từ admin
+# Why? IP của EKS workers thay đổi khi scale → SG-to-SG luôn match
 resource "aws_security_group" "rds" {
   name_prefix = "${local.db_identifier}-sg-"
-  description = "RDS security group - only EKS workers can connect"
+  description = "RDS PostgreSQL security group - only EKS workers can connect"
   vpc_id      = data.terraform_remote_state.network.outputs.vpc_id
 
-  # Inbound: chỉ MySQL từ EKS workers
+  # Inbound: PostgreSQL 5432 từ EKS workers
   ingress {
-    description     = "MySQL from EKS workers"
-    from_port       = 3306
-    to_port         = 3306
+    description     = "PostgreSQL from EKS worker nodes"
+    from_port       = var.db_port
+    to_port         = var.db_port
     protocol        = "tcp"
-    # security_groups = [data.terraform_remote_state.eks.outputs.node_security_group_id]
+    security_groups = [data.terraform_remote_state.eks.outputs.node_security_group_id]
   }
 
-  # Outbound: tất cả (RDS không khởi tạo connection ra ngoài)
+  # Outbound: tất cả (RDS không initiate connection ra ngoài, nhưng để default cho safety)
   egress {
+    description = "Allow all outbound (RDS does not initiate connections)"
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
@@ -26,7 +38,7 @@ resource "aws_security_group" "rds" {
   }
 
   lifecycle {
-    create_before_destroy = true # Tránh downtime khi rename SG
+    create_before_destroy = true
   }
 
   tags = merge(local.common_tags, {
@@ -35,10 +47,10 @@ resource "aws_security_group" "rds" {
 }
 
 # ─── DB Subnet Group ──────────────────────────────
-# Tận dụng private subnets của VPC (Phần 2.2)
+# RDS phải nằm trong private subnets (defense in depth)
 resource "aws_db_subnet_group" "main" {
   name        = "${local.db_identifier}-subnet-group"
-  description = "RDS subnet group for private subnets"
+  description = "RDS subnet group - private subnets only"
   subnet_ids  = data.terraform_remote_state.network.outputs.private_subnet_ids
 
   tags = merge(local.common_tags, {
@@ -47,26 +59,35 @@ resource "aws_db_subnet_group" "main" {
 }
 
 # ─── DB Parameter Group ───────────────────────────
-# Config tuning cho MySQL
+# PostgreSQL parameters (KHÁC MySQL):
+# - log_statement: log gì? (none/ddl/mod/all)
+# - log_min_duration_statement: log query > N ms
 resource "aws_db_parameter_group" "main" {
   name        = "${local.db_identifier}-params"
-  family      = "mysql8.0"
-  description = "MySQL 8.0 parameter group"
+  family      = "postgres15"
+  description = "PostgreSQL 15 parameter group"
 
-  # Performance tuning examples
+  # Log mọi DDL (CREATE TABLE, ALTER...) — useful cho audit
   parameter {
-    name  = "max_connections"
-    value = "100" # Default 151 cho t3.micro, tune theo workload
+    name  = "log_statement"
+    value = "ddl"
+  }
+
+  # Log slow query > 2000ms = 2s
+  parameter {
+    name  = "log_min_duration_statement"
+    value = "2000"
+  }
+
+  # Log connection events (audit trail)
+  parameter {
+    name  = "log_connections"
+    value = "1"
   }
 
   parameter {
-    name  = "slow_query_log"
-    value = "1" # Enable slow query log
-  }
-
-  parameter {
-    name  = "long_query_time"
-    value = "2" # Log query > 2s
+    name  = "log_disconnections"
+    value = "1"
   }
 
   tags = local.common_tags
@@ -94,66 +115,67 @@ resource "aws_kms_alias" "rds" {
 
 # ─── RDS Instance ⭐ ───────────────────────────────
 resource "aws_db_instance" "main" {
-  # Identity
+  # ─── Identity ─────────────────────────────────
   identifier = local.db_identifier
 
-  # Engine
+  # ─── Engine ───────────────────────────────────
   engine         = var.db_engine
   engine_version = var.db_engine_version
   instance_class = var.db_instance_class
+  port           = var.db_port
 
-  # Storage
+  # ─── Storage ──────────────────────────────────
   allocated_storage     = var.db_allocated_storage
   max_allocated_storage = var.db_max_allocated_storage
   storage_type          = "gp3"
   storage_encrypted     = true
   kms_key_id            = aws_kms_key.rds.arn
 
-  # ─── Database ───
+  # ─── Database ─────────────────────────────────
   db_name  = var.db_name
   username = var.db_username
 
-  # ─── Password — MAGIC IS HERE ────────────────────
-  # AWS auto-generate password + lưu Secrets Manager
-  # Pod đọc password qua External Secrets Operator (Phase 6)
+  # ─── Password — AWS-managed (Secrets Manager) ─
+  # AWS auto-generate strong password, lưu Secrets Manager
   manage_master_user_password   = true
   master_user_secret_kms_key_id = aws_kms_key.rds.arn
 
-  # ─── Network ───
+  # ─── Network ──────────────────────────────────
   db_subnet_group_name   = aws_db_subnet_group.main.name
   vpc_security_group_ids = [aws_security_group.rds.id]
-  publicly_accessible    = false # PRIVATE only — defense in depth
+  publicly_accessible    = false
 
-  # ─── Parameter group ───
+  # ─── Parameter group ──────────────────────────
   parameter_group_name = aws_db_parameter_group.main.name
 
-  # ─── HA ───
-  multi_az = var.db_multi_az # Dev: false, prod: true
+  # ─── HA ───────────────────────────────────────
+  multi_az = var.db_multi_az
 
-  # ─── Backup ───
+  # ─── Backup ───────────────────────────────────
   backup_retention_period = var.db_backup_retention_period
-  backup_window           = "03:00-04:00" # UTC = 10-11am Vietnam
-  maintenance_window      = "Sun:04:00-Sun:05:00"
+  backup_window           = "03:00-04:00"          # UTC = 10-11am Vietnam (low traffic)
+  maintenance_window      = "Sun:04:00-Sun:05:00"  # UTC
 
-  # ─── Monitoring ───
-  performance_insights_enabled          = false # Dev: false. Prod: true (tốn tiền)
-  performance_insights_kms_key_id       = aws_kms_key.rds.arn
-  performance_insights_retention_period = 7
-  monitoring_interval                   = 60 # Enhanced monitoring 60s
-  monitoring_role_arn                   = aws_iam_role.rds_monitoring.arn
+  # ─── Performance Insights — DISABLED cho dev ──
+  # ⚠️ Khi disabled, KHÔNG được set kms_key_id và retention_period
+  # AWS RDS API sẽ reject với InvalidParameterCombination
+  performance_insights_enabled = false
 
-  # ─── Logs ───
-  enabled_cloudwatch_logs_exports = ["error", "general", "slowquery"]
+  # ─── Enhanced Monitoring (basic CloudWatch) ──
+  monitoring_interval = 60  # OS-level metrics mỗi 60s
+  monitoring_role_arn = aws_iam_role.rds_monitoring.arn
 
-  # ─── Lifecycle ───
-  # Production: skip_final_snapshot = false (LUÔN snapshot trước destroy)
-  # Dev: true cho tiện destroy
-  skip_final_snapshot      = true
+  # ─── CloudWatch Logs Export ───────────────────
+  # PostgreSQL log types: postgresql (general), upgrade (version upgrade events)
+  enabled_cloudwatch_logs_exports = ["postgresql", "upgrade"]
+
+  # ─── Lifecycle ────────────────────────────────
+  skip_final_snapshot      = true   # Dev: true cho tiện destroy. ⚠️ Prod: PHẢI false
   delete_automated_backups = true
-  deletion_protection      = false # Dev: false. Prod: TRUE!
+  deletion_protection      = false  # ⚠️ Prod: PHẢI true
 
-  # ─── Misc ───
-  apply_immediately          = false # Apply trong maintenance window (an toàn hơn)
+  # ─── Misc ─────────────────────────────────────
+  apply_immediately          = true   # Dev: true cho fast feedback. Prod: false
   copy_tags_to_snapshot      = true
   auto_minor_version_upgrade = true
 

@@ -5,17 +5,17 @@
 #   - app.example.com  (subdomain chính)
 #   - *.example.com    (wildcard cho future subdomain)
 resource "aws_acm_certificate" "main" {
-  domain_name = var.domain_name   # apex domain
+  domain_name = var.domain_name # apex domain
 
   subject_alternative_names = [
-    "*.${var.domain_name}",        # wildcard
-    local.full_fqdn,                # subdomain cụ thể
+    "*.${var.domain_name}", # wildcard
+    local.full_fqdn,        # subdomain cụ thể
   ]
 
   validation_method = "DNS"
 
   lifecycle {
-    create_before_destroy = true   # Tránh downtime khi rotate cert
+    create_before_destroy = true # Tránh downtime khi rotate cert
   }
 
   tags = {
@@ -50,6 +50,6 @@ resource "aws_acm_certificate_validation" "main" {
   validation_record_fqdns = [for record in aws_route53_record.cert_validation : record.fqdn]
 
   timeouts {
-    create = "10m"   # Đôi khi DNS validation lâu
+    create = "10m" # Đôi khi DNS validation lâu
   }
 }

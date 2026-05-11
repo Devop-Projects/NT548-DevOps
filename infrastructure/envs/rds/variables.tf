@@ -16,17 +16,22 @@ variable "region" {
   default = "ap-southeast-1"
 }
 
-# ─── RDS ─────────────────────────────────────────
+# ─── RDS Engine ──────────────────────────────────
 variable "db_engine" {
   description = "Database engine"
   type        = string
-  default     = "mysql"
+  default     = "postgres" # ← Đổi từ mysql
 }
 
 variable "db_engine_version" {
   description = "Engine version"
   type        = string
-  default     = "8.0.39" # MySQL 8.0 — kiểm tra latest tại apply time
+  default     = "15.7" # PostgreSQL 15.7 — kiểm tra latest tại apply time
+
+  # Why 15.7?
+  # - PostgreSQL 15 là LTS, support đến 2027
+  # - 15.7 stable hơn 16.x (mới release)
+  # - Sequelize 6.37+ support tốt PostgreSQL 15
 }
 
 variable "db_instance_class" {
@@ -35,10 +40,16 @@ variable "db_instance_class" {
   default     = "db.t3.micro" # Free tier eligible 12 tháng
 }
 
+variable "db_port" {
+  description = "Database port"
+  type        = number
+  default     = 5432 # PostgreSQL default (MySQL: 3306)
+}
+
 variable "db_allocated_storage" {
   description = "Storage GB (initial)"
   type        = number
-  default     = 20 # Free tier: 20GB
+  default     = 20
 }
 
 variable "db_max_allocated_storage" {
@@ -54,9 +65,14 @@ variable "db_name" {
 }
 
 variable "db_username" {
-  description = "Master username"
+  description = "Master username (KHÔNG dùng 'admin' với PostgreSQL — reserved!)"
   type        = string
-  default     = "admin"
+  default     = "appuser"
+
+  validation {
+    condition     = !contains(["admin", "user", "postgres", "root"], var.db_username)
+    error_message = "Không dùng reserved username (admin/user/postgres/root) — PostgreSQL sẽ reject."
+  }
 }
 
 variable "db_multi_az" {
@@ -68,5 +84,5 @@ variable "db_multi_az" {
 variable "db_backup_retention_period" {
   description = "Số ngày giữ backup"
   type        = number
-  default     = 1 # Dev: 1 ngày. Prod: 7-30.
+  default     = 1
 }
