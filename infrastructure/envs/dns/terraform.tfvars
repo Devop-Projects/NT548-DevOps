@@ -4,4 +4,4 @@
 domain_name        = "vantai.click"
 subdomain          = "task-manager"
 create_hosted_zone = false
-alb_exists = false
+alb_exists = falseexternal-secret-backend.yaml.tpl

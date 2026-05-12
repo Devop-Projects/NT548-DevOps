@@ -4,10 +4,14 @@
 # Sửa file .tpl, rồi chạy `make k8s-render` để regenerate.
 #
 # Placeholders (envsubst sẽ thay):
-#   ${RDS_ENDPOINT}    — từ rds output db_address
-#   ${DB_NAME}         — từ rds output db_name
-#   ${IMAGE_TAG}       — git short SHA
-#   ${DOCKERHUB_USER}  — Docker Hub username
+#   ${RDS_ENDPOINT}          — từ rds output db_address
+#   ${DB_NAME}               — từ rds output db_name
+#   ${IMAGE_TAG}             — git short SHA
+#   ${DOCKERHUB_USER}        — Docker Hub username
+#   ${RDS_SECRET_NAME}       — extract từ rds output db_master_user_secret_arn
+#   ${BACKEND_SECRET_NAME}   — từ secrets output backend_secret_name
+#   ${ACM_CERT_ARN}          — từ dns output acm_certificate_arn
+#   ${APP_FQDN}              — từ dns output full_fqdn
 
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
@@ -16,8 +20,9 @@ namespace: task-manager-dev
 
 resources:
 - ../../base
-- secret-store.yaml
-- external-secret.yaml
+- secret-store.yaml              # ClusterSecretStore (1 cho cả cluster)
+- external-secret.yaml           # ExternalSecret cho DB (rds!db-xxx)
+- external-secret-backend.yaml   # ⭐ MỚI: ExternalSecret cho JWT
 - ingress-alb.yaml
 
 images:
@@ -52,6 +57,8 @@ patches:
   target:
     kind: Job
     name: db-migrate
+
+# StatefulSet postgres → scale down 0 (vì dùng RDS thay thế)
 - target:
     kind: StatefulSet
     name: postgres
@@ -60,6 +67,17 @@ patches:
       path: /spec/replicas
       value: 0
 
+# ⭐ MỚI: xóa postgres-secrets local — vì JWT đã có ESO, password đã có db-credentials
+# Không cần Secret "postgres-secrets" nữa
+- target:
+    kind: Secret
+    name: postgres-secrets
+  patch: |-
+    $patch: delete
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      name: postgres-secrets
 
 labels:
 - pairs:

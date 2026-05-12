@@ -1,9 +1,16 @@
 # .github/workflows/iac-security.yml
 #
-# IaC Security Scanning Pipeline
-# Tools: tfsec, Checkov, Trivy IaC
-# Strategy: All soft-fail (report-only) for thesis dev
-# Production: change soft_fail=false to BLOCK merge on HIGH findings
+# IaC Security Scanning Pipeline (Phase 5.8)
+# Tools: tfsec (Aqua), Checkov (Bridgecrew), Trivy IaC (Aqua)
+# Strategy: All soft-fail (report-only) cho thesis development.
+# Production: đổi soft_fail=false để BLOCK merge khi có HIGH findings.
+#
+# Why 3 tools that overlap?
+# - Different rule databases → catch different things
+# - Defense in depth (same philosophy as backend security layers)
+# - tfsec: fast, low FP, AWS-focused
+# - Checkov: comprehensive, ~1000 policies, multi-cloud
+# - Trivy IaC: integrates with image scanning (consistency)
 
 name: IaC Security
 
@@ -74,15 +81,16 @@ jobs:
           checkov -d infrastructure \
             --framework terraform \
             --output sarif \
-            --output-file-path checkov.sarif \
+            --output-file-path . \
             --soft-fail \
             --skip-check CKV_AWS_158,CKV_AWS_111,CKV_AWS_338
 
+      # ⭐ FIX: v3 thay vì v4 (v4 chưa tồn tại; sẽ fail nếu giữ v4)
       - name: Upload Checkov SARIF
         if: always()
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: checkov.sarif
+          sarif_file: results_sarif.sarif
           category: checkov
 
   # ─── Trivy IaC ────────────────────────────────
@@ -131,4 +139,7 @@ jobs:
           echo "✓ Trivy IaC: ${{ needs.trivy-iac.result }}"
           echo ""
           echo "View detailed findings:"
-          echo "→ Security tab → Code scanning alerts"
+          echo "→ Repo → Security tab → Code scanning alerts"
+          echo ""
+          echo "All 3 tools currently in SOFT-FAIL mode (report-only)."
+          echo "For production: flip soft_fail=false to block merge on HIGH severity."
