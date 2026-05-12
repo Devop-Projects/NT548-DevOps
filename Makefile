@@ -148,7 +148,7 @@ k8s-render:  ## Render K8s manifests từ TF outputs
 	   envsubst < $$tpl > $$out; \
 	   echo "  ✓ $$out"; \
 	 done
-
+,
 .PHONY: k8s-namespace
 k8s-namespace:
 	@kubectl create namespace $(NAMESPACE) --dry-run=client -o yaml | kubectl apply -f -
@@ -215,8 +215,15 @@ k8s-delete:
 	@kubectl delete secret backend-secrets -n $(NAMESPACE) --ignore-not-found
 	@sleep 60
 
-.PHONY: tf-destroy-dns
-tf-destroy-dns:
+.PHONY: tf-destroy-dns-phase2
+tf-destroy-dns-phase2:  ## Remove ALB DNS record before deleting K8s ALB
+	@echo "$(COLOR_BLUE)▶ DNS Destroy Phase 2: remove ALB record$(COLOR_RESET)"
+	@sed -i 's/alb_exists = true/alb_exists = false/g' $(ENVS_DIR)/dns/terraform.tfvars || true
+	@cd $(ENVS_DIR)/dns && terraform apply -auto-approve
+
+.PHONY: tf-destroy-dns-phase1
+tf-destroy-dns-phase1:  ## Destroy DNS base resources after ALB record removed
+	@echo "$(COLOR_BLUE)▶ DNS Destroy Phase 1: destroy ACM/zone$(COLOR_RESET)"
 	@cd $(ENVS_DIR)/dns && terraform destroy -auto-approve
 
 .PHONY: tf-destroy-secrets
@@ -236,7 +243,7 @@ tf-destroy-network:
 	@cd $(ENVS_DIR)/dev && terraform destroy -auto-approve
 
 .PHONY: destroy-all
-destroy-all: confirm-destroy tf-destroy-dns k8s-delete tf-destroy-secrets tf-destroy-rds tf-destroy-eks tf-destroy-network
+destroy-all: confirm-destroy tf-destroy-dns-phase2 k8s-delete tf-destroy-dns-phase1 tf-destroy-secrets tf-destroy-rds tf-destroy-eks tf-destroy-network
 
 .PHONY: confirm-destroy
 confirm-destroy:

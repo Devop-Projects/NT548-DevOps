@@ -69,3 +69,5 @@ k8s/overlays/aws/ingress-alb.yaml
 infrastructure/envs/*/common.auto.tfvars
 infrastructure/envs/*/*.bak
 k8s/overlays/aws/*.bak
+
+.helm/
