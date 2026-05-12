@@ -40,23 +40,26 @@ locals {
   cluster_name = data.terraform_remote_state.eks.outputs.cluster_name
 }
 
-# ─── ALB Lookup qua tag (AWS LB Controller tự gắn) ────
+# ALB lookup — chỉ chạy sau khi Kubernetes Ingress tạo ALB xong
 data "aws_lb" "app" {
+  count = var.alb_exists ? 1 : 0
+
   tags = {
     "elbv2.k8s.aws/cluster"    = local.cluster_name
     "ingress.k8s.aws/resource" = "LoadBalancer"
   }
 }
 
-# ─── A record (ALIAS) ──────────────────────────────
+# Route53 record — chỉ tạo khi ALB đã tồn tại
 resource "aws_route53_record" "app" {
+  count   = var.alb_exists ? 1 : 0
   zone_id = local.zone_id
   name    = local.full_fqdn
   type    = "A"
 
   alias {
-    name                   = data.aws_lb.app.dns_name
-    zone_id                = data.aws_lb.app.zone_id
+    name                   = data.aws_lb.app[0].dns_name
+    zone_id                = data.aws_lb.app[0].zone_id
     evaluate_target_health = true
   }
 }

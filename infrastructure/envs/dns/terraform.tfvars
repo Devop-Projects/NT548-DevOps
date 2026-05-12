@@ -4,3 +4,4 @@
 domain_name        = "vantai.click"
 subdomain          = "task-manager"
 create_hosted_zone = false
+alb_exists = true

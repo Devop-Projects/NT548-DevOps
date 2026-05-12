@@ -41,3 +41,8 @@ variable "create_hosted_zone" {
   type        = bool
   default     = false
 }
+variable "alb_exists" {
+  description = "true sau khi k8s-deploy tạo xong ALB"
+  type        = bool
+  default     = false
+}

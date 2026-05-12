@@ -106,8 +106,17 @@ tf-apply-secrets:
 .PHONY: tf-apply-infrastructure
 tf-apply-infrastructure: tf-apply-network tf-apply-eks tf-apply-rds tf-apply-secrets
 
-.PHONY: tf-apply-dns
-tf-apply-dns:  ## Apply DNS (SAU k8s-wait-alb)
+.PHONY: tf-apply-dns-phase1
+tf-apply-dns-phase1:  ## Apply DNS phase 1: ACM + Hosted Zone, chưa lookup ALB
+	@echo "$(COLOR_BLUE)▶ DNS Phase 1: ACM + Hosted Zone only$(COLOR_RESET)"
+	@sed -i 's/alb_exists = true/alb_exists = false/g' $(ENVS_DIR)/dns/terraform.tfvars || true
+	@grep -q '^alb_exists' $(ENVS_DIR)/dns/terraform.tfvars || echo 'alb_exists = false' >> $(ENVS_DIR)/dns/terraform.tfvars
+	@cd $(ENVS_DIR)/dns && terraform apply -auto-approve
+
+.PHONY: tf-apply-dns-phase2
+tf-apply-dns-phase2:  ## Apply DNS phase 2: Route53 record sau khi ALB tồn tại
+	@echo "$(COLOR_BLUE)▶ DNS Phase 2: ALB Route53 record$(COLOR_RESET)"
+	@sed -i 's/alb_exists = false/alb_exists = true/g' $(ENVS_DIR)/dns/terraform.tfvars
 	@cd $(ENVS_DIR)/dns && terraform apply -auto-approve
 
 # ============================================================================
@@ -125,8 +134,8 @@ k8s-render:  ## Render K8s manifests từ TF outputs
 	 RDS_SECRET_ARN=$$(cd $(ENVS_DIR)/rds && terraform output -raw db_master_user_secret_arn) && \
 	 RDS_SECRET_NAME=$$(echo $$RDS_SECRET_ARN | awk -F: '{print $$NF}' | sed 's/-[A-Za-z0-9]*$$//') && \
 	 DB_NAME=$$(cd $(ENVS_DIR)/rds && terraform output -raw db_name) && \
-	 ACM_CERT_ARN=$$(cd $(ENVS_DIR)/dns && terraform output -raw acm_certificate_arn 2>/dev/null || echo "PENDING") && \
-	 APP_FQDN=$$(cd $(ENVS_DIR)/dns && terraform output -raw full_fqdn 2>/dev/null || echo "task-manager.example.com") && \
+	 ACM_CERT_ARN=$$(cd $(ENVS_DIR)/dns && terraform output -raw acm_certificate_arn 2>/dev/null | tr -d '\000-\010\013\014\016-\037' || echo "PENDING") && \
+	 APP_FQDN=$$(cd $(ENVS_DIR)/dns && terraform output -raw full_fqdn 2>/dev/null | tr -d '\000-\010\013\014\016-\037' || echo "task-manager.example.com") && \
 	 export RDS_ENDPOINT RDS_SECRET_NAME DB_NAME ACM_CERT_ARN APP_FQDN \
 	        IMAGE_TAG="$(IMAGE_TAG)" DOCKERHUB_USER="$(DOCKERHUB_USER)" && \
 	 echo "  RDS_ENDPOINT    = $$RDS_ENDPOINT" && \
@@ -181,7 +190,7 @@ k8s-logs:
 # ============================================================================
 
 .PHONY: deploy-all
-deploy-all: tf-init-all tf-apply-infrastructure k8s-deploy k8s-wait-alb tf-apply-dns k8s-render
+deploy-all: tf-init-all tf-apply-infrastructure tf-apply-dns-phase1 k8s-deploy k8s-wait-alb tf-apply-dns-phase2 k8s-render
 	@cd $(K8S_OVERLAY) && kubectl apply -k .
 	@$(MAKE) verify
 

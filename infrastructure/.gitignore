@@ -21,3 +21,6 @@ override.tf.json
 
 tfplan
 *.tfplan
+
+.helm
+*.helm 

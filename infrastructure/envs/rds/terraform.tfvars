@@ -1,7 +1,7 @@
 # envs/rds/terraform.tfvars
 
 db_engine                  = "postgres"
-db_engine_version          = "15.7"
+db_engine_version          = "15.17"
 db_instance_class          = "db.t3.micro"
 db_port                    = 5432
 db_allocated_storage       = 20

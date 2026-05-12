@@ -4,10 +4,10 @@
 # Sửa file .tpl, rồi chạy `make k8s-render` để regenerate.
 #
 # Placeholders (envsubst sẽ thay):
-#   ${RDS_ENDPOINT}    — từ rds output db_address
-#   ${DB_NAME}         — từ rds output db_name
-#   ${IMAGE_TAG}       — git short SHA
-#   ${DOCKERHUB_USER}  — Docker Hub username
+#   devops-dev-db.chi0awig8v33.ap-southeast-1.rds.amazonaws.com    — từ rds output db_address
+#   appdb         — từ rds output db_name
+#   cbd8e8b       — git short SHA
+#   doanvantai  — Docker Hub username
 
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
@@ -22,19 +22,19 @@ resources:
 
 images:
 - name: task-manager-backend
-  newName: ${DOCKERHUB_USER}/nt548-backend
-  newTag: ${IMAGE_TAG}
+  newName: doanvantai/nt548-backend
+  newTag: cbd8e8b
 - name: task-manager-frontend
-  newName: ${DOCKERHUB_USER}/nt548-frontend
-  newTag: ${IMAGE_TAG}
+  newName: doanvantai/nt548-frontend
+  newTag: cbd8e8b
 
 configMapGenerator:
 - name: backend-config
   behavior: merge
   literals:
-  - DB_HOST=${RDS_ENDPOINT}
+  - DB_HOST=devops-dev-db.chi0awig8v33.ap-southeast-1.rds.amazonaws.com
   - DB_PORT=5432
-  - DB_NAME=${DB_NAME}
+  - DB_NAME=appdb
   - DB_USER=appuser
   - DB_SSL=true
 
