@@ -30,7 +30,7 @@ resource "aws_kms_key" "secrets" {
   }
 }
 
-# Friendly alias (vd: alias/devops-thesis-secrets)
+# Friendly alias (vd: alias/devops-secrets)
 resource "aws_kms_alias" "secrets" {
   name          = "alias/${var.project}-${var.environment}-secrets"
   target_key_id = aws_kms_key.secrets.key_id

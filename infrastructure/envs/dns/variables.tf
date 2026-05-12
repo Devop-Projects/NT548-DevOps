@@ -2,7 +2,7 @@
 
 variable "project" {
   type    = string
-  default = "devops-thesis"
+  default = "devops"
 }
 
 variable "environment" {
@@ -15,21 +15,29 @@ variable "region" {
   default = "ap-southeast-1"
 }
 
+variable "owner" {
+  type    = string
+  default = "vantai"
+}
+
+variable "tfstate_bucket" {
+  description = "S3 bucket name cho remote state lookup (đọc EKS state)"
+  type        = string
+}
+
 variable "domain_name" {
   description = "Root domain (vd: example.com)"
   type        = string
-  # KHÔNG default — bắt buộc nhập
 }
 
 variable "subdomain" {
-  description = "Subdomain cho app (vd: app, api, www)"
+  description = "Subdomain cho app (vd: app, api, task-manager)"
   type        = string
   default     = "app"
 }
 
-# Quyết định tạo Hosted Zone mới hay dùng zone đã có?
 variable "create_hosted_zone" {
   description = "true nếu zone chưa tồn tại"
   type        = bool
-  default     = true
+  default     = false
 }

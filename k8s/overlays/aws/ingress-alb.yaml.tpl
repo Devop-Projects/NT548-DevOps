@@ -1,8 +1,8 @@
-# k8s/overlays/aws/ingress-alb.yaml
+# k8s/overlays/aws/ingress-alb.yaml.tpl
 #
-# AWS ALB Ingress — AWS LB Controller sẽ watch và tạo ALB thật.
-# Name khác base ('task-manager-aws' vs 'task-manager') để 2 Ingress cùng tồn tại
-# mà không conflict trong Kustomize.
+# Placeholders:
+#   ${ACM_CERT_ARN} — từ dns output acm_certificate_arn
+#   ${APP_FQDN}     — từ dns output full_fqdn (vd: task-manager.vantai.click)
 
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -10,17 +10,17 @@ metadata:
   name: task-manager-aws
   namespace: task-manager-dev
   annotations:
-    # ───── ALB Provisioning ─────
+    # ALB Provisioning
     alb.ingress.kubernetes.io/scheme: internet-facing
     alb.ingress.kubernetes.io/target-type: ip
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
 
-    # ───── TLS / HTTPS ─────
-    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:ap-southeast-1:954692413669:certificate/3eb49502-a01c-4237-9ff0-15fe207f4002
+    # TLS / HTTPS
+    alb.ingress.kubernetes.io/certificate-arn: ${ACM_CERT_ARN}
     alb.ingress.kubernetes.io/ssl-policy: ELBSecurityPolicy-TLS13-1-2-2021-06
     alb.ingress.kubernetes.io/ssl-redirect: '443'
 
-    # ───── Health Check ─────
+    # Health Check
     alb.ingress.kubernetes.io/healthcheck-path: /health/ready
     alb.ingress.kubernetes.io/healthcheck-interval-seconds: '15'
     alb.ingress.kubernetes.io/healthcheck-timeout-seconds: '5'
@@ -28,16 +28,15 @@ metadata:
     alb.ingress.kubernetes.io/unhealthy-threshold-count: '3'
     alb.ingress.kubernetes.io/success-codes: '200'
 
-    # ───── Tags ─────
-    alb.ingress.kubernetes.io/tags: Project=devops-thesis,Environment=dev,ManagedBy=kubernetes
+    # Tags
+    alb.ingress.kubernetes.io/tags: Project=devops,Environment=dev,ManagedBy=kubernetes
 
 spec:
   ingressClassName: alb
   rules:
-  - host: task-manager.vantai.click
+  - host: ${APP_FQDN}
     http:
       paths:
-      # /api/* → backend (PHẢI đứng trước /)
       - path: /api
         pathType: Prefix
         backend:
@@ -45,7 +44,6 @@ spec:
             name: backend
             port:
               number: 3000
-      # /* → frontend (catch-all)
       - path: /
         pathType: Prefix
         backend:

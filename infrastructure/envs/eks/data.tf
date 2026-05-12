@@ -1,15 +1,15 @@
 # envs/eks/data.tf
 
-# ─── Đọc output từ network state \ ──────
-# Đây là cách share data giữa các state đã tách
+# ─── Đọc network state qua var.tfstate_bucket (không hardcode) ───
 data "terraform_remote_state" "network" {
   backend = "s3"
 
   config = {
-    bucket = "thesis-tfstate-954692413669" # ← Đổi account ID
-    key    = "dev/network/terraform.tfstate"
-    region = "ap-southeast-1"
+    bucket = var.tfstate_bucket
+    key    = "${var.environment}/network/terraform.tfstate"
+    region = var.region
   }
 }
 
 data "aws_caller_identity" "current" {}
+data "aws_region" "current" {}

@@ -27,7 +27,7 @@ provider "aws" {
 
   default_tags {
     tags = {
-      Project   = "devops"
+      Project   = "devops-thesis"
       Purpose   = "terraform-bootstrap"
       ManagedBy = "terraform"
       Critical  = "true" # ← marker: KHÔNG xóa nhầm

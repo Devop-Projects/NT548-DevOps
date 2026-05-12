@@ -1,23 +1,23 @@
 # envs/rds/data.tf
 
-# ─── Đọc network state ───────────────────────────
+# ─── Đọc network state ─────────────────────────────
 data "terraform_remote_state" "network" {
   backend = "s3"
 
   config = {
-    bucket = "thesis-tfstate-954692413669" # ← Đổi
-    key    = "dev/network/terraform.tfstate"
-    region = "ap-southeast-1"
+    bucket = var.tfstate_bucket
+    key    = "${var.environment}/network/terraform.tfstate"
+    region = var.region
   }
 }
 
-# ─── Đọc EKS state (cần SG của workers) ──────────
+# ─── Đọc EKS state (cần SG node để RDS allow) ──────
 data "terraform_remote_state" "eks" {
   backend = "s3"
 
   config = {
-    bucket = "thesis-tfstate-954692413669" # ← Đổi
-    key    = "dev/eks/terraform.tfstate"
-    region = "ap-southeast-1"
+    bucket = var.tfstate_bucket
+    key    = "${var.environment}/eks/terraform.tfstate"
+    region = var.region
   }
 }
