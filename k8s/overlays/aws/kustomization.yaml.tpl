@@ -68,16 +68,7 @@ patches:
       value: 0
 
 # ⭐ MỚI: xóa postgres-secrets local — vì JWT đã có ESO, password đã có db-credentials
-# Không cần Secret "postgres-secrets" nữa
-- target:
-    kind: Secret
-    name: postgres-secrets
-  patch: |-
-    $patch: delete
-    apiVersion: v1
-    kind: Secret
-    metadata:
-      name: postgres-secrets
+
 
 labels:
 - pairs:

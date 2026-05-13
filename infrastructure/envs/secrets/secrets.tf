@@ -22,13 +22,17 @@ resource "aws_secretsmanager_secret" "backend" {
   name        = "${var.project}/${var.environment}/backend/secrets"
   description = "Backend application secrets (JWT, etc.)"
 
-  kms_key_id = aws_kms_key.secrets.arn # ← Custom KMS key
+  kms_key_id = aws_kms_key.secrets.arn
 
   # Recovery window: 7-30 ngày, có thể restore
   recovery_window_in_days = 7
 
   tags = {
     Component = "backend"
+  }
+
+  lifecycle {
+    prevent_destroy = true
   }
 }
 

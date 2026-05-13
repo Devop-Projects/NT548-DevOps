@@ -52,6 +52,10 @@ resource "helm_release" "aws_load_balancer_controller" {
 
   depends_on = [module.eks]
 
+  wait             = true
+  wait_for_jobs    = true
+  timeout          = 300   # 5 phút
+
   # Cluster name (controller cần để tag resources)
   set {
     name  = "clusterName"
@@ -123,6 +127,7 @@ resource "aws_iam_policy" "external_secrets" {
         # Narrow scope: chỉ RDS-managed secrets
         # Pattern: rds!cluster-* hoặc rds!db-*
         Resource = [
+          "arn:aws:secretsmanager:${var.region}:${data.aws_caller_identity.addons.account_id}:secret:devops/*",
           "arn:aws:secretsmanager:${var.region}:${data.aws_caller_identity.addons.account_id}:secret:rds!*",
         ]
       },
@@ -174,7 +179,15 @@ resource "helm_release" "external_secrets" {
   create_namespace = true
   version          = "0.10.0"
 
-  depends_on = [module.eks]
+  #  THÊM: phụ thuộc LBC đã hoàn toàn ready
+  depends_on = [
+    module.eks,
+    helm_release.aws_load_balancer_controller,   # ← key fix
+  ]
+
+  wait          = true
+  wait_for_jobs = true
+  timeout       = 300
 
   # Install CRDs (ExternalSecret, SecretStore, ...)
   set {
