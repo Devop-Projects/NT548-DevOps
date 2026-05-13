@@ -1,0 +1,29 @@
+# k8s/overlays/aws/external-secret.yaml.tpl
+#
+# Placeholders:
+#   ${RDS_SECRET_NAME} — tên secret trong AWS Secrets Manager
+#                        (vd: rds!db-f0804f0d-0d06-...)
+#                        Extract từ output rds.db_master_user_secret_arn
+
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: db-credentials
+  namespace: task-manager-dev
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: aws-secrets-manager
+    kind: ClusterSecretStore
+  target:
+    name: db-credentials
+    creationPolicy: Owner
+  data:
+    - secretKey: DB_USERNAME
+      remoteRef:
+        key: ${RDS_SECRET_NAME}
+        property: username
+    - secretKey: DB_PASSWORD
+      remoteRef:
+        key: ${RDS_SECRET_NAME}
+        property: password

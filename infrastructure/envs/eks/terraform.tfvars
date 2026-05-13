@@ -1,13 +1,11 @@
 # envs/eks/terraform.tfvars
+#
+# Vars chung ở common.auto.tfvars (symlink). File này chỉ vars riêng EKS.
 
-project            = "devops"
-environment        = "dev"
-region             = "ap-southeast-1"
 kubernetes_version = "1.30"
 
-# ⚠️ Thay bằng IP của bạn (cho secure)
-# Lấy IP: curl ifconfig.me
-cluster_endpoint_public_access_cidrs = ["0.0.0.0/0"] # tạm thời
+# ⚠️ Thay bằng IP của bạn cho secure (lấy: curl ifconfig.me)
+cluster_endpoint_public_access_cidrs = ["0.0.0.0/0"]
 
 # Node group
 node_instance_types = ["t3.medium", "t3a.medium"]

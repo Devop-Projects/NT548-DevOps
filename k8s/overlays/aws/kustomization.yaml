@@ -1,0 +1,77 @@
+# k8s/overlays/aws/kustomization.yaml.tpl
+#
+# ⭐ TEMPLATE — KHÔNG sửa file rendered (kustomization.yaml).
+# Sửa file .tpl, rồi chạy `make k8s-render` để regenerate.
+#
+# Placeholders (envsubst sẽ thay):
+#   devops-dev-db.chi0awig8v33.ap-southeast-1.rds.amazonaws.com          — từ rds output db_address
+#   appdb               — từ rds output db_name
+#   48b934f             — git short SHA
+#   doanvantai        — Docker Hub username
+#   rds!db-f0b191bf-5082-4e72-82fb-e3f59b5f1521       — extract từ rds output db_master_user_secret_arn
+#   devops/dev/backend/secrets   — từ secrets output backend_secret_name
+#   arn:aws:acm:ap-southeast-1:954692413669:certificate/55ab906f-ead3-4d13-bfb0-524b88901adb          — từ dns output acm_certificate_arn
+#   task-manager.vantai.click              — từ dns output full_fqdn
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: task-manager-dev
+
+resources:
+- ../../base
+- secret-store.yaml              # ClusterSecretStore (1 cho cả cluster)
+- external-secret.yaml           # ExternalSecret cho DB (rds!db-xxx)
+- external-secret-backend.yaml   # ⭐ MỚI: ExternalSecret cho JWT
+- ingress-alb.yaml
+
+images:
+- name: task-manager-backend
+  newName: doanvantai/nt548-backend
+  newTag: 48b934f
+- name: task-manager-frontend
+  newName: doanvantai/nt548-frontend
+  newTag: 48b934f
+
+configMapGenerator:
+- name: backend-config
+  behavior: merge
+  literals:
+  - DB_HOST=devops-dev-db.chi0awig8v33.ap-southeast-1.rds.amazonaws.com
+  - DB_PORT=5432
+  - DB_NAME=appdb
+  - DB_USER=appuser
+  - DB_SSL=true
+
+patches:
+- path: delete-nginx-ingress.yaml
+- path: backend-deployment-patch.yaml
+  target:
+    kind: Deployment
+    name: backend
+- path: frontend-deployment-patch.yaml
+  target:
+    kind: Deployment
+    name: frontend
+- path: migrate-job-patch.yaml
+  target:
+    kind: Job
+    name: db-migrate
+
+# StatefulSet postgres → scale down 0 (vì dùng RDS thay thế)
+- target:
+    kind: StatefulSet
+    name: postgres
+  patch: |-
+    - op: replace
+      path: /spec/replicas
+      value: 0
+
+# ⭐ MỚI: xóa postgres-secrets local — vì JWT đã có ESO, password đã có db-credentials
+
+
+labels:
+- pairs:
+    environment: aws-dev
+    cloud: aws
+  includeSelectors: false

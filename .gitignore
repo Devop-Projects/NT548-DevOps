@@ -63,4 +63,11 @@ crash.*.log
 override.tf
 override.tf.json
 *_override.tf
-*_override.tf.json
+*_override.tf.jsonk8s/overlays/aws/kustomization.yaml
+k8s/overlays/aws/external-secret.yaml
+k8s/overlays/aws/ingress-alb.yaml
+infrastructure/envs/*/common.auto.tfvars
+infrastructure/envs/*/*.bak
+k8s/overlays/aws/*.bak
+
+.helm/

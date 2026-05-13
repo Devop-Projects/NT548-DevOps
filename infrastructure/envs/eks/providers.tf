@@ -28,6 +28,7 @@ provider "kubernetes" {
 }
 
 # ─── Helm provider ───────────────────────────────────
+# Force IPv4 cho chart download (workaround cho IPv6 issues trong VN)
 provider "helm" {
   kubernetes {
     host                   = module.eks.cluster_endpoint
@@ -39,4 +40,8 @@ provider "helm" {
       args        = ["eks", "get-token", "--cluster-name", module.eks.cluster_name]
     }
   }
+
+  # Repository config helper
+  repository_config_path = "${path.module}/.helm/repositories.yaml"
+  repository_cache       = "${path.module}/.helm/cache"
 }

@@ -1,0 +1,145 @@
+# .github/workflows/iac-security.yml
+#
+# IaC Security Scanning Pipeline (Phase 5.8)
+# Tools: tfsec (Aqua), Checkov (Bridgecrew), Trivy IaC (Aqua)
+# Strategy: All soft-fail (report-only) cho thesis development.
+# Production: đổi soft_fail=false để BLOCK merge khi có HIGH findings.
+#
+# Why 3 tools that overlap?
+# - Different rule databases → catch different things
+# - Defense in depth (same philosophy as backend security layers)
+# - tfsec: fast, low FP, AWS-focused
+# - Checkov: comprehensive, ~1000 policies, multi-cloud
+# - Trivy IaC: integrates with image scanning (consistency)
+
+name: IaC Security
+
+on:
+  push:
+    branches: [main, develop, vantai]
+    paths:
+      - 'infrastructure/**'
+      - '.github/workflows/iac-security.yml'
+  pull_request:
+    paths:
+      - 'infrastructure/**'
+  workflow_dispatch:
+
+concurrency:
+  group: iac-security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ─── tfsec ────────────────────────────────────
+  tfsec:
+    name: tfsec scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      security-events: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run tfsec (SARIF for GitHub Security)
+        uses: aquasecurity/tfsec-sarif-action@v0.1.4
+        with:
+          working_directory: infrastructure
+          sarif_file: tfsec.sarif
+
+      - name: Upload tfsec SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: tfsec.sarif
+          category: tfsec
+
+      - name: tfsec PR comment
+        if: github.event_name == 'pull_request'
+        uses: aquasecurity/tfsec-pr-commenter-action@v1.3.1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          working_directory: infrastructure
+
+  # ─── Checkov ──────────────────────────────────
+  checkov:
+    name: Checkov scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Checkov
+        run: pip install checkov
+
+      - name: Run Checkov (SARIF)
+        run: |
+          checkov -d infrastructure \
+            --framework terraform \
+            --output sarif \
+            --output-file-path . \
+            --soft-fail \
+            --skip-check CKV_AWS_158,CKV_AWS_111,CKV_AWS_338
+
+      # ⭐ FIX: v3 thay vì v4 (v4 chưa tồn tại; sẽ fail nếu giữ v4)
+      - name: Upload Checkov SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: results_sarif.sarif
+          category: checkov
+
+  # ─── Trivy IaC ────────────────────────────────
+  trivy-iac:
+    name: Trivy IaC config scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Trivy config scan
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: 'config'
+          scan-ref: 'infrastructure'
+          format: 'sarif'
+          output: 'trivy-iac.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+          exit-code: '0'
+
+      - name: Upload Trivy SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-iac.sarif
+          category: trivy-iac
+
+  # ─── Summary job ──────────────────────────────
+  summary:
+    name: Security Summary
+    runs-on: ubuntu-latest
+    needs: [tfsec, checkov, trivy-iac]
+    if: always()
+
+    steps:
+      - name: Print summary
+        run: |
+          echo "═══════════════════════════════════════════════"
+          echo "  IaC Security Scan Summary"
+          echo "═══════════════════════════════════════════════"
+          echo "✓ tfsec:     ${{ needs.tfsec.result }}"
+          echo "✓ Checkov:   ${{ needs.checkov.result }}"
+          echo "✓ Trivy IaC: ${{ needs.trivy-iac.result }}"
+          echo ""
+          echo "View detailed findings:"
+          echo "→ Repo → Security tab → Code scanning alerts"
+          echo ""
+          echo "All 3 tools currently in SOFT-FAIL mode (report-only)."
+          echo "For production: flip soft_fail=false to block merge on HIGH severity."

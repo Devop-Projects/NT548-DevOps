@@ -3,7 +3,7 @@
 variable "project" {
   description = "Project name"
   type        = string
-  default     = "devops-thesis"
+  default     = "devops"
 }
 
 variable "environment" {
@@ -28,6 +28,13 @@ variable "owner" {
   type        = string
 }
 
+# Reserved cho consistency với các state khác (network không đọc remote state)
+variable "tfstate_bucket" {
+  description = "S3 bucket name cho remote state (unused ở network state)"
+  type        = string
+  default     = ""
+}
+
 # ─── VPC config ───────────────────────────────────────
 variable "vpc_cidr" {
   description = "VPC CIDR block"
@@ -47,11 +54,10 @@ variable "az_count" {
 
   validation {
     condition     = var.az_count >= 2 && var.az_count <= 3
-    error_message = "az_count phải 2 hoặc 3 (HA tối thiểu 2 AZ)."
+    error_message = "az_count phải 2 hoặc 3."
   }
 }
 
-# ─── NAT config ───────────────────────────────────────
 variable "single_nat_gateway" {
   description = "Single NAT cho dev (tiết kiệm) hay 1 NAT/AZ cho prod"
   type        = bool

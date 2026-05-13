@@ -31,3 +31,10 @@ output "acm_certificate_arn" {
 output "acm_status" {
   value = aws_acm_certificate.main.status
 }
+output "app_dns_record" {
+  value = var.alb_exists ? aws_route53_record.app[0].fqdn : "not-created-yet"
+}
+
+output "app_alb_dns" {
+  value = var.alb_exists ? data.aws_lb.app[0].dns_name : "not-created-yet"
+}
