@@ -6,11 +6,11 @@
 # Placeholders (envsubst sẽ thay):
 #   devops-dev-db.chi0awig8v33.ap-southeast-1.rds.amazonaws.com          — từ rds output db_address
 #   appdb               — từ rds output db_name
-#   48b934f             — git short SHA
+#   5a4f9f4             — git short SHA
 #   doanvantai        — Docker Hub username
-#   rds!db-f0b191bf-5082-4e72-82fb-e3f59b5f1521       — extract từ rds output db_master_user_secret_arn
+#   rds!db-ac12da14-bd77-480b-bb50-f49c041b4912       — extract từ rds output db_master_user_secret_arn
 #   devops/dev/backend/secrets   — từ secrets output backend_secret_name
-#   arn:aws:acm:ap-southeast-1:954692413669:certificate/55ab906f-ead3-4d13-bfb0-524b88901adb          — từ dns output acm_certificate_arn
+#   arn:aws:acm:ap-southeast-1:954692413669:certificate/1ffc406a-dbab-49c0-9bf0-fca2066d09da          — từ dns output acm_certificate_arn
 #   task-manager.vantai.click              — từ dns output full_fqdn
 
 apiVersion: kustomize.config.k8s.io/v1beta1
@@ -28,10 +28,10 @@ resources:
 images:
 - name: task-manager-backend
   newName: doanvantai/nt548-backend
-  newTag: 48b934f
+  newTag: 5a4f9f4
 - name: task-manager-frontend
   newName: doanvantai/nt548-frontend
-  newTag: 48b934f
+  newTag: 5a4f9f4
 
 configMapGenerator:
 - name: backend-config

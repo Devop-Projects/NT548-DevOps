@@ -25,15 +25,15 @@ resource "aws_secretsmanager_secret" "backend" {
   kms_key_id = aws_kms_key.secrets.arn
 
   # Recovery window: 7-30 ngày, có thể restore
-  recovery_window_in_days = 7
+  recovery_window_in_days = 0
 
   tags = {
     Component = "backend"
   }
 
-  lifecycle {
-    prevent_destroy = true
-  }
+  # lifecycle {
+  #   prevent_destroy = true
+  # }
 }
 
 resource "aws_secretsmanager_secret_version" "backend" {
