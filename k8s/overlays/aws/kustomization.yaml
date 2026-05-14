@@ -6,7 +6,7 @@
 # Placeholders (envsubst sẽ thay):
 #   devops-dev-db.chi0awig8v33.ap-southeast-1.rds.amazonaws.com          — từ rds output db_address
 #   appdb               — từ rds output db_name
-#   5a4f9f4             — git short SHA
+#   ae1adf0             — git short SHA
 #   doanvantai        — Docker Hub username
 #   rds!db-ac12da14-bd77-480b-bb50-f49c041b4912       — extract từ rds output db_master_user_secret_arn
 #   devops/dev/backend/secrets   — từ secrets output backend_secret_name
@@ -28,10 +28,10 @@ resources:
 images:
 - name: task-manager-backend
   newName: doanvantai/nt548-backend
-  newTag: 5a4f9f4
+  newTag: ae1adf0
 - name: task-manager-frontend
   newName: doanvantai/nt548-frontend
-  newTag: 5a4f9f4
+  newTag: ae1adf0
 
 configMapGenerator:
 - name: backend-config
