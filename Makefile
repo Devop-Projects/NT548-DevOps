@@ -226,7 +226,7 @@ verify-secrets:  ## Kiểm tra secret sync chain hoạt động
 # ============================================================================
 
 .PHONY: deploy-all
-deploy-all: tf-init-all tf-apply-infrastructure tf-apply-dns-phase1 k8s-deploy k8s-wait-alb tf-apply-dns-phase2 k8s-render
+deploy-all: tf-init-all tf-apply-infrastructure tf-apply-dns-phase1 k8s-render k8s-deploy k8s-wait-alb tf-apply-dns-phase2
 	@cd $(K8S_OVERLAY) && kubectl apply -k .
 	@$(MAKE) verify
 
@@ -272,42 +272,121 @@ sec-trivy:  ## Scan với Trivy IaC
 
 .PHONY: k8s-delete
 k8s-delete:
-	@cd $(K8S_OVERLAY) && kubectl delete -k . --ignore-not-found
-	@sleep 60
+	@echo "$(COLOR_BLUE)▶ Step 1: Delete Ingress → trigger LBC to delete ALB...$(COLOR_RESET)"
+	@kubectl delete ingress --all -n $(NAMESPACE) --ignore-not-found || true
+	@echo "$(COLOR_BLUE)▶ Step 2: Wait for ALB to be fully deleted by LBC...$(COLOR_RESET)"
+	@for i in $$(seq 1 30); do \
+	  COUNT=$$(aws elbv2 describe-load-balancers \
+	    --region $(REGION) \
+	    --query "length(LoadBalancers[?contains(LoadBalancerName, 'taskmana')])" \
+	    --output text 2>/dev/null || echo "0"); \
+	  if [ "$$COUNT" = "0" ] || [ -z "$$COUNT" ] || [ "$$COUNT" = "None" ]; then \
+	    echo "$(COLOR_GREEN)✓ ALB deleted by LBC$(COLOR_RESET)"; break; \
+	  fi; \
+	  echo "  ... ALB still exists ($$i/30), waiting 20s"; sleep 20; \
+	done
+	@echo "$(COLOR_BLUE)▶ Step 3: Force delete remaining K8s resources...$(COLOR_RESET)"
+	@cd $(K8S_OVERLAY) && kubectl delete -k . --ignore-not-found || true
+	@kubectl delete namespace $(NAMESPACE) --ignore-not-found --wait=true || true
+	@echo "$(COLOR_BLUE)▶ Step 4: Cleanup orphan ALB Security Groups...$(COLOR_RESET)"
+	@VPC_ID=$$(cd $(ENVS_DIR)/dev && terraform output -raw vpc_id 2>/dev/null || echo ""); \
+	if [ -n "$$VPC_ID" ]; then \
+	  aws ec2 describe-security-groups \
+	    --filters "Name=vpc-id,Values=$$VPC_ID" \
+	    --region $(REGION) \
+	    --query "SecurityGroups[?GroupName!='default'].GroupId" \
+	    --output text 2>/dev/null | tr '\t' '\n' | while read sg; do \
+	      if [ -n "$$sg" ]; then \
+	        echo "  Deleting orphan SG: $$sg"; \
+	        aws ec2 delete-security-group --group-id $$sg --region $(REGION) 2>/dev/null || \
+	          echo "  $(COLOR_YELLOW)⚠ Could not delete $$sg (may have dependencies)$(COLOR_RESET)"; \
+	      fi; \
+	    done; \
+	fi
+	@echo "$(COLOR_GREEN)✓ k8s-delete complete$(COLOR_RESET)"
+
+.PHONY: confirm-destroy
+confirm-destroy:
+	@read -p "Type 'destroy' to confirm: " confirm; \
+	if [ "$$confirm" != "destroy" ]; then \
+	  echo "$(COLOR_RED)Aborted$(COLOR_RESET)"; exit 1; \
+	fi
 
 .PHONY: tf-destroy-dns-phase2
 tf-destroy-dns-phase2:
-	@echo "$(COLOR_BLUE)▶ DNS Destroy Phase 2: remove ALB record$(COLOR_RESET)"
+	@echo "$(COLOR_BLUE)▶ DNS Destroy Phase 2: remove ALB Route53 record$(COLOR_RESET)"
 	@sed -i 's/alb_exists = true/alb_exists = false/g' $(ENVS_DIR)/dns/terraform.tfvars || true
 	@cd $(ENVS_DIR)/dns && terraform apply -auto-approve
 
 .PHONY: tf-destroy-dns-phase1
 tf-destroy-dns-phase1:
+	@echo "$(COLOR_BLUE)▶ DNS Destroy Phase 1: ACM cert + validation records$(COLOR_RESET)"
+	@echo "$(COLOR_BLUE)▶ Verifying cert is not in use before destroying...$(COLOR_RESET)"
+	@CERT_ARN=$$(cd $(ENVS_DIR)/dns && terraform output -raw acm_certificate_arn 2>/dev/null || echo ""); \
+	if [ -n "$$CERT_ARN" ]; then \
+	  IN_USE=$$(aws acm describe-certificate \
+	    --certificate-arn $$CERT_ARN \
+	    --region $(REGION) \
+	    --query 'Certificate.InUseBy' \
+	    --output text 2>/dev/null); \
+	  if [ -n "$$IN_USE" ] && [ "$$IN_USE" != "None" ]; then \
+	    echo "$(COLOR_RED)✗ Cert still in use by: $$IN_USE$(COLOR_RESET)"; \
+	    echo "$(COLOR_RED)  Please delete the ALB first, then retry$(COLOR_RESET)"; \
+	    echo "$(COLOR_YELLOW)  Run: aws elbv2 delete-load-balancer --load-balancer-arn <ARN> --region $(REGION)$(COLOR_RESET)"; \
+	    exit 1; \
+	  fi; \
+	fi
 	@cd $(ENVS_DIR)/dns && terraform destroy -auto-approve
 
 .PHONY: tf-destroy-secrets
 tf-destroy-secrets:
+	@echo "$(COLOR_BLUE)▶ Destroying Secrets Manager...$(COLOR_RESET)"
 	@cd $(ENVS_DIR)/secrets && terraform destroy -auto-approve
 
 .PHONY: tf-destroy-rds
 tf-destroy-rds:
+	@echo "$(COLOR_BLUE)▶ Destroying RDS (~5 min)...$(COLOR_RESET)"
 	@cd $(ENVS_DIR)/rds && terraform destroy -auto-approve
 
 .PHONY: tf-destroy-eks
 tf-destroy-eks:
+	@echo "$(COLOR_BLUE)▶ Destroying EKS (~15 min)...$(COLOR_RESET)"
 	@cd $(ENVS_DIR)/eks && terraform destroy -auto-approve
 
 .PHONY: tf-destroy-network
 tf-destroy-network:
+	@echo "$(COLOR_BLUE)▶ Destroying Network (VPC, subnets, NAT)...$(COLOR_RESET)"
+	@echo "$(COLOR_BLUE)▶ Checking for orphan Security Groups in VPC...$(COLOR_RESET)"
+	@VPC_ID=$$(cd $(ENVS_DIR)/dev && terraform output -raw vpc_id 2>/dev/null || echo ""); \
+	if [ -n "$$VPC_ID" ]; then \
+	  SG_LIST=$$(aws ec2 describe-security-groups \
+	    --filters "Name=vpc-id,Values=$$VPC_ID" \
+	    --region $(REGION) \
+	    --query "SecurityGroups[?GroupName!='default'].GroupId" \
+	    --output text 2>/dev/null); \
+	  for sg in $$SG_LIST; do \
+	    echo "  Deleting orphan SG: $$sg"; \
+	    aws ec2 delete-security-group --group-id $$sg --region $(REGION) 2>/dev/null || true; \
+	  done; \
+	fi
 	@cd $(ENVS_DIR)/dev && terraform destroy -auto-approve
 
+# ⭐ DESTROY ALL — đúng thứ tự, có safety checks
 .PHONY: destroy-all
-destroy-all: confirm-destroy tf-destroy-dns-phase2 k8s-delete tf-destroy-dns-phase1 tf-destroy-secrets tf-destroy-rds tf-destroy-eks tf-destroy-network
+destroy-all: confirm-destroy \
+	tf-destroy-dns-phase2 \
+	k8s-delete \
+	tf-destroy-dns-phase1 \
+	tf-destroy-secrets \
+	tf-destroy-rds \
+	tf-destroy-eks \
+	tf-destroy-network
+	@echo "$(COLOR_GREEN)✓ All resources destroyed$(COLOR_RESET)"
 
-.PHONY: confirm-destroy
-confirm-destroy:
-	@read -p "Type 'destroy' to confirm: " confirm; \
-	if [ "$$confirm" != "destroy" ]; then exit 1; fi
+# .PHONY: destroy-all
+# destroy-all: confirm-destroy tf-destroy-dns-phase2 k8s-delete tf-destroy-dns-phase1 tf-destroy-secrets tf-destroy-rds tf-destroy-eks tf-destroy-network
+
+
 
 # ============================================================================
 # COST

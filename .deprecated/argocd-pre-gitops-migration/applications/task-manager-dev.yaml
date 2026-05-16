@@ -1,0 +1,101 @@
+# argocd/applications/task-manager-dev.yaml
+#
+# ArgoCD Application: quản lý deploy task-manager vào namespace task-manager-dev.
+#
+# Đây là declaration đầu tiên của bạn về GitOps:
+#   "Tôi muốn folder k8s/overlays/aws trong Git repo X được deploy vào namespace Y"
+#
+# Sau khi apply file này, ArgoCD sẽ:
+#   1. Clone repo về Repo Server
+#   2. Chạy `kustomize build k8s/overlays/aws`
+#   3. So sánh với cluster
+#   4. Apply diff (vì syncPolicy.automated)
+#   5. Lặp lại mỗi 3 phút
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: task-manager-dev
+  namespace: argocd                    # CRD luôn nằm trong namespace argocd
+
+  # Finalizer: khi xóa Application, cũng xóa các resource đã deploy
+  # Nếu không có, xóa App chỉ xóa Application CRD, không xóa pod/service
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+
+spec:
+  # AppProject = grouping cho RBAC. "default" có quyền tới mọi cluster/namespace
+  project: default
+
+  # ─────────────────────────────────────────────────────────────
+  # SOURCE: Git ở đâu?
+  # ─────────────────────────────────────────────────────────────
+  source:
+    # ⚠️ ĐỔI THÀNH REPO CỦA BẠN
+    repoURL: https://github.com/Devop-Projects/NT548-DevOps
+    targetRevision: vantai               # Branch để watch
+    path: k8s/overlays/aws             # Folder chứa kustomization.yaml
+
+  # ─────────────────────────────────────────────────────────────
+  # DESTINATION: Deploy vào đâu?
+  # ─────────────────────────────────────────────────────────────
+  destination:
+    # https://kubernetes.default.svc = cluster mà ArgoCD đang chạy (in-cluster)
+    server: https://kubernetes.default.svc
+    namespace: task-manager-dev        # Namespace target
+
+  # ─────────────────────────────────────────────────────────────
+  # SYNC POLICY: Cách deploy & xử lý drift
+  # ─────────────────────────────────────────────────────────────
+  syncPolicy:
+    automated:
+      # prune=true: nếu xóa resource khỏi Git, cũng xóa khỏi cluster
+      # ⚠️ CẨN THẬN: nếu accidentally rm file YAML, cluster sẽ delete pod thật
+      prune: true
+
+      # selfHeal=true: nếu drift (kubectl edit), tự revert về Git
+      # Cho dev: bật. Cho prod: cân nhắc tắt
+      selfHeal: true
+
+      # allowEmpty=false: từ chối sync nếu Git "trống" (toàn bộ resource bị xóa)
+      # → tránh accident xóa hết bằng commit rỗng
+      allowEmpty: false
+
+    syncOptions:
+      # Tự tạo namespace nếu chưa có
+      - CreateNamespace=true
+
+      # Server-side apply: best practice, tránh conflict với fields do controller manage
+      - ServerSideApply=true
+
+      # Validate=false: ArgoCD bỏ qua kubectl validate (nhanh hơn, tránh false positive)
+      - Validate=false
+
+      # PruneLast=true: xóa resource cuối cùng (sau khi đã apply mọi cái khác)
+      # → tránh trường hợp xóa CRD trước khi xóa Custom Resource
+      - PruneLast=true
+
+    retry:
+      limit: 5                         # Retry 5 lần nếu sync fail
+      backoff:
+        duration: 5s                   # Lần 1: đợi 5s
+        factor: 2                      # Lần n: duration * 2^(n-1)
+        maxDuration: 3m                # Tối đa 3 phút giữa retry
+
+  # ─────────────────────────────────────────────────────────────
+  # REVISION HISTORY: Giữ bao nhiều history?
+  # ─────────────────────────────────────────────────────────────
+  # Mặc định 10. Mỗi history = 1 deployment "rollback-able" trong UI.
+  revisionHistoryLimit: 10
+
+  # ─────────────────────────────────────────────────────────────
+  # IGNORE DIFFERENCES: Bỏ qua một số field khi so sánh
+  # ─────────────────────────────────────────────────────────────
+  # Vì sao cần? Một số field bị mutated bởi K8s/controller sau khi apply.
+  # Ví dụ: HPA tự sửa replicas → nếu không ignore, ArgoCD luôn thấy drift.
+  ignoreDifferences:
+    # Bỏ qua replicas của Deployment (vì HPA có thể quản lý)
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas

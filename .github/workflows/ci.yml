@@ -388,3 +388,102 @@ jobs:
       - name: Run Gitleaks scan
         run: |
           gitleaks detect --source . --verbose --redact
+  # ===========================================================================
+  # JOB 7: Update config repo with new image tag (GitOps promotion to dev)
+  # ===========================================================================
+  # Triggers only on main branch push (not PR).
+  # Updates charts/task-manager/values-aws-dev.yaml in config repo.
+  # ArgoCD will detect the change and sync automatically.
+  # ===========================================================================
+  update-config-repo:
+    name: Update config repo (GitOps promotion)
+    runs-on: ubuntu-latest
+    needs: [build-backend, build-frontend]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    timeout-minutes: 5
+
+    steps:
+      # ─── Checkout config repo ────────────────────────────
+      - name: Checkout config repo
+        uses: actions/checkout@v4
+        with:
+          repository: Devop-Projects/nt548-config
+          token: ${{ secrets.CONFIG_REPO_TOKEN }}
+          path: config-repo
+          ref: main
+
+      # ─── Install yq for YAML manipulation ───────────────
+      # yq is a YAML-aware sed (jq for YAML)
+      - name: Install yq
+        run: |
+          sudo wget -qO /usr/local/bin/yq \
+            https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+          yq --version
+
+      # ─── Extract image tag ───────────────────────────────
+      # github.sha is the full SHA. We want short SHA (7 chars) to match
+      # the tag CI uses in build-backend/build-frontend jobs.
+      - name: Extract short SHA
+        id: sha
+        run: echo "short=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_OUTPUT
+
+      # ─── Update values-aws-dev.yaml ──────────────────────
+      - name: Update backend image tag
+        working-directory: config-repo
+        run: |
+          yq eval -i '.backend.image.tag = "${{ steps.sha.outputs.short }}"' \
+            charts/task-manager/values-aws-dev.yaml
+
+      - name: Update frontend image tag
+        working-directory: config-repo
+        run: |
+          yq eval -i '.frontend.image.tag = "${{ steps.sha.outputs.short }}"' \
+            charts/task-manager/values-aws-dev.yaml
+
+      # ─── Verify changes ──────────────────────────────────
+      - name: Show diff
+        working-directory: config-repo
+        run: |
+          echo "=== Changes in values-aws-dev.yaml ==="
+          git diff charts/task-manager/values-aws-dev.yaml || true
+
+      # ─── Commit & push ───────────────────────────────────
+      - name: Commit and push
+        working-directory: config-repo
+        run: |
+          # Configure git as CI bot
+          git config user.email "ci-bot@nt548-devops.local"
+          git config user.name "NT548 CI Bot"
+
+          # Check if there are changes (idempotent)
+          if git diff --quiet; then
+            echo "✓ No changes to values-aws-dev.yaml (image tag already up-to-date)"
+            exit 0
+          fi
+
+          # Stage + commit + push
+          git add charts/task-manager/values-aws-dev.yaml
+          git commit -m "ci(dev): promote image to ${{ steps.sha.outputs.short }}
+
+          Source commit: https://github.com/${{ github.repository }}/commit/${{ github.sha }}
+          Triggered by: ${{ github.actor }}
+          Workflow: ${{ github.workflow }} #${{ github.run_number }}
+
+          [skip ci]"
+
+          git push origin main
+          echo "✓ Pushed image tag update to config repo"
+
+      # ─── Notify status ───────────────────────────────────
+      - name: Print summary
+        run: |
+          echo "═══════════════════════════════════════════════════════"
+          echo "  GitOps Promotion Complete"
+          echo "═══════════════════════════════════════════════════════"
+          echo "  Image tag:        ${{ steps.sha.outputs.short }}"
+          echo "  Config repo:      Devop-Projects/nt548-config"
+          echo "  Updated file:     charts/task-manager/values-aws-dev.yaml"
+          echo "  Next:             ArgoCD will sync within 3 minutes"
+          echo "                    https://localhost:8081/applications/task-manager-dev"
+          echo "═══════════════════════════════════════════════════════"
