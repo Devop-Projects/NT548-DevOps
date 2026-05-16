@@ -40,7 +40,7 @@ jobs:
       security-events: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Run tfsec (SARIF for GitHub Security)
         uses: aquasecurity/tfsec-sarif-action@v0.1.4
@@ -50,7 +50,7 @@ jobs:
 
       - name: Upload tfsec SARIF
         if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: tfsec.sarif
           category: tfsec
@@ -71,7 +71,7 @@ jobs:
       security-events: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install Checkov
         run: pip install checkov
@@ -88,7 +88,7 @@ jobs:
       # ⭐ FIX: v3 thay vì v4 (v4 chưa tồn tại; sẽ fail nếu giữ v4)
       - name: Upload Checkov SARIF
         if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: results_sarif.sarif
           category: checkov
@@ -102,7 +102,7 @@ jobs:
       security-events: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Trivy config scan
         uses: aquasecurity/trivy-action@v0.36.0
@@ -116,7 +116,7 @@ jobs:
 
       - name: Upload Trivy SARIF
         if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-iac.sarif
           category: trivy-iac
