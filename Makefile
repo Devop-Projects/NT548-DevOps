@@ -270,10 +270,31 @@ sec-trivy:  ## Scan với Trivy IaC
 # DESTROY
 # ============================================================================
 
+# ============================================================================
+# K8S DELETE — Phase 6 (GitOps via ArgoCD)
+# ============================================================================
+# Workflow:
+# 1. Delete Ingress → AWS LB Controller delete ALB (no more app traffic)
+# 2. Wait ALB fully gone
+# 3. Delete ArgoCD Application with cascade → ArgoCD prunes all resources
+# 4. Wait namespace gone
+# 5. Cleanup orphan SGs (defensive)
+# ============================================================================
+
 .PHONY: k8s-delete
-k8s-delete:
+k8s-delete:  ## Delete K8s app resources via ArgoCD (GitOps-aware)
+	@echo "$(COLOR_BLUE)═══════════════════════════════════════════════$(COLOR_RESET)"
+	@echo "$(COLOR_BLUE)  Delete app resources (GitOps workflow)$(COLOR_RESET)"
+	@echo "$(COLOR_BLUE)═══════════════════════════════════════════════$(COLOR_RESET)"
+	@$(MAKE) k8s-delete-ingress
+	@$(MAKE) k8s-delete-via-argocd
+	@$(MAKE) k8s-cleanup-orphan-sgs
+	@echo "$(COLOR_GREEN)✓ k8s-delete complete$(COLOR_RESET)"
+
+.PHONY: k8s-delete-ingress
+k8s-delete-ingress:  ## Step 1: Delete Ingress (frees ALB)
 	@echo "$(COLOR_BLUE)▶ Step 1: Delete Ingress → trigger LBC to delete ALB...$(COLOR_RESET)"
-	@kubectl delete ingress --all -n $(NAMESPACE) --ignore-not-found || true
+	@kubectl delete ingress --all -n $(NAMESPACE) --ignore-not-found 2>/dev/null || true
 	@echo "$(COLOR_BLUE)▶ Step 2: Wait for ALB to be fully deleted by LBC...$(COLOR_RESET)"
 	@for i in $$(seq 1 30); do \
 	  COUNT=$$(aws elbv2 describe-load-balancers \
@@ -281,14 +302,35 @@ k8s-delete:
 	    --query "length(LoadBalancers[?contains(LoadBalancerName, 'taskmana')])" \
 	    --output text 2>/dev/null || echo "0"); \
 	  if [ "$$COUNT" = "0" ] || [ -z "$$COUNT" ] || [ "$$COUNT" = "None" ]; then \
-	    echo "$(COLOR_GREEN)✓ ALB deleted by LBC$(COLOR_RESET)"; break; \
+	    echo "$(COLOR_GREEN)  ✓ ALB deleted by LBC$(COLOR_RESET)"; break; \
 	  fi; \
 	  echo "  ... ALB still exists ($$i/30), waiting 20s"; sleep 20; \
 	done
-	@echo "$(COLOR_BLUE)▶ Step 3: Force delete remaining K8s resources...$(COLOR_RESET)"
-	@cd $(K8S_OVERLAY) && kubectl delete -k . --ignore-not-found || true
-	@kubectl delete namespace $(NAMESPACE) --ignore-not-found --wait=true || true
-	@echo "$(COLOR_BLUE)▶ Step 4: Cleanup orphan ALB Security Groups...$(COLOR_RESET)"
+
+.PHONY: k8s-delete-via-argocd
+k8s-delete-via-argocd:  ## Step 3: Delete ArgoCD Application with cascade
+	@echo "$(COLOR_BLUE)▶ Step 3: Delete ArgoCD application (cascade prune)...$(COLOR_RESET)"
+	@# Check if ArgoCD app exists
+	@if kubectl get application $(ARGOCD_APP) -n $(ARGOCD_NAMESPACE) >/dev/null 2>&1; then \
+	  echo "  Removing ArgoCD app finalizers (force delete)..."; \
+	  kubectl patch application $(ARGOCD_APP) -n $(ARGOCD_NAMESPACE) \
+	    --type json \
+	    -p '[{"op":"remove","path":"/metadata/finalizers"}]' 2>/dev/null || true; \
+	  echo "  Deleting ArgoCD app with cascade (timeout 5min)..."; \
+	  kubectl delete application $(ARGOCD_APP) -n $(ARGOCD_NAMESPACE) \
+	    --cascade=foreground \
+	    --timeout=300s --ignore-not-found || \
+	    echo "$(COLOR_YELLOW)  ⚠ Timeout — may need manual cleanup$(COLOR_RESET)"; \
+	else \
+	  echo "$(COLOR_YELLOW)  ⚠ ArgoCD app not found (already deleted?)$(COLOR_RESET)"; \
+	fi
+	@echo "$(COLOR_BLUE)▶ Step 4: Force delete namespace if still exists...$(COLOR_RESET)"
+	@kubectl delete namespace $(NAMESPACE) --ignore-not-found --wait=true --timeout=120s 2>/dev/null || \
+	  echo "$(COLOR_YELLOW)  ⚠ Namespace deletion stuck — may need manual finalizer removal$(COLOR_RESET)"
+
+.PHONY: k8s-cleanup-orphan-sgs
+k8s-cleanup-orphan-sgs:  ## Step 5: Cleanup orphan Security Groups
+	@echo "$(COLOR_BLUE)▶ Step 5: Cleanup orphan ALB Security Groups...$(COLOR_RESET)"
 	@VPC_ID=$$(cd $(ENVS_DIR)/dev && terraform output -raw vpc_id 2>/dev/null || echo ""); \
 	if [ -n "$$VPC_ID" ]; then \
 	  aws ec2 describe-security-groups \
@@ -299,12 +341,33 @@ k8s-delete:
 	      if [ -n "$$sg" ]; then \
 	        echo "  Deleting orphan SG: $$sg"; \
 	        aws ec2 delete-security-group --group-id $$sg --region $(REGION) 2>/dev/null || \
-	          echo "  $(COLOR_YELLOW)⚠ Could not delete $$sg (may have dependencies)$(COLOR_RESET)"; \
+	          echo "  $(COLOR_YELLOW)⚠ Could not delete $$sg (dependencies)$(COLOR_RESET)"; \
 	      fi; \
 	    done; \
 	fi
-	@echo "$(COLOR_GREEN)✓ k8s-delete complete$(COLOR_RESET)"
 
+# ============================================================================
+# ARGOCD CLEANUP (before destroy EKS)
+# ============================================================================
+
+.PHONY: argocd-cleanup
+argocd-cleanup:  ## Delete ALL ArgoCD applications (before EKS destroy)
+	@echo "$(COLOR_BLUE)▶ Cleaning up all ArgoCD applications...$(COLOR_RESET)"
+	@# List all applications
+	@kubectl get applications -n $(ARGOCD_NAMESPACE) --no-headers 2>/dev/null | \
+	  awk '{print $$1}' | while read app; do \
+	    if [ -n "$$app" ]; then \
+	      echo "  Removing finalizers from $$app..."; \
+	      kubectl patch application $$app -n $(ARGOCD_NAMESPACE) \
+	        --type json \
+	        -p '[{"op":"remove","path":"/metadata/finalizers"}]' 2>/dev/null || true; \
+	    fi; \
+	  done
+	@echo "$(COLOR_BLUE)▶ Deleting all ArgoCD applications...$(COLOR_RESET)"
+	@kubectl delete applications --all -n $(ARGOCD_NAMESPACE) \
+	  --cascade=foreground --timeout=300s 2>/dev/null || \
+	  echo "$(COLOR_YELLOW)  ⚠ Some apps may not have deleted cleanly$(COLOR_RESET)"
+	@echo "$(COLOR_GREEN)✓ ArgoCD cleanup complete$(COLOR_RESET)"
 .PHONY: confirm-destroy
 confirm-destroy:
 	@read -p "Type 'destroy' to confirm: " confirm; \
@@ -372,17 +435,17 @@ tf-destroy-network:
 	@cd $(ENVS_DIR)/dev && terraform destroy -auto-approve
 
 # ⭐ DESTROY ALL — đúng thứ tự, có safety checks
+# ⭐ DESTROY ALL — Phase 6 workflow (GitOps-aware)
 .PHONY: destroy-all
-destroy-all: confirm-destroy \
-	tf-destroy-dns-phase2 \
-	k8s-delete \
-	tf-destroy-dns-phase1 \
-	tf-destroy-secrets \
-	tf-destroy-rds \
-	tf-destroy-eks \
-	tf-destroy-network
+destroy-all: confirm-destroy
+	@$(MAKE) k8s-delete                    # ← New: delete via ArgoCD
+	@$(MAKE) argocd-cleanup                # ← New: cleanup other apps
+	@$(MAKE) tf-destroy-dns-phase1
+	@$(MAKE) tf-destroy-secrets
+	@$(MAKE) tf-destroy-rds
+	@$(MAKE) tf-destroy-eks
+	@$(MAKE) tf-destroy-network
 	@echo "$(COLOR_GREEN)✓ All resources destroyed$(COLOR_RESET)"
-
 # .PHONY: destroy-all
 # destroy-all: confirm-destroy tf-destroy-dns-phase2 k8s-delete tf-destroy-dns-phase1 tf-destroy-secrets tf-destroy-rds tf-destroy-eks tf-destroy-network
 
