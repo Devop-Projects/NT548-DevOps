@@ -11,5 +11,5 @@ cluster_endpoint_public_access_cidrs = ["0.0.0.0/0"]
 node_instance_types = ["t3.medium", "t3a.medium"]
 node_capacity_type  = "SPOT"
 node_min_size       = 1
-node_max_size       = 3
-node_desired_size   = 2
+node_max_size       = 4
+node_desired_size   = 3
