@@ -104,7 +104,7 @@ tf-apply-secrets:  ## Apply secrets state (JWT + KMS)
 # ⭐ tf-apply-infrastructure — bao gồm tất cả states cần thiết
 # Order matters: network → eks → rds (depends on eks SG) → secrets (independent)
 .PHONY: tf-apply-infrastructure
-tf-apply-infrastructure: tf-apply-network tf-apply-eks tf-apply-rds tf-apply-secrets
+tf-apply-infrastructure: tf-apply-rds tf-apply-secrets
 
 .PHONY: tf-apply-dns-phase1
 tf-apply-dns-phase1:  ## Apply DNS phase 1: ACM + Hosted Zone
@@ -436,10 +436,10 @@ tf-destroy-network:
 
 # ⭐ DESTROY ALL — đúng thứ tự, có safety checks
 # ⭐ DESTROY ALL — Phase 6 workflow (GitOps-aware)
-.PHONY: destroy-all
 destroy-all: confirm-destroy
-	@$(MAKE) k8s-delete                    # ← New: delete via ArgoCD
-	@$(MAKE) argocd-cleanup                # ← New: cleanup other apps
+	@$(MAKE) tf-destroy-dns-phase2
+	@$(MAKE) k8s-delete
+	@$(MAKE) argocd-cleanup
 	@$(MAKE) tf-destroy-dns-phase1
 	@$(MAKE) tf-destroy-secrets
 	@$(MAKE) tf-destroy-rds

@@ -41,16 +41,29 @@ locals {
 }
 
 # ALB lookup — chỉ chạy sau khi Kubernetes Ingress tạo ALB xong
+# ─── ALB lookup: task-manager app ───────────────
 data "aws_lb" "app" {
   count = var.alb_exists ? 1 : 0
 
   tags = {
     "elbv2.k8s.aws/cluster"    = local.cluster_name
     "ingress.k8s.aws/resource" = "LoadBalancer"
+    "ingress.k8s.aws/stack"    = "task-manager-dev/task-manager"
   }
 }
 
-# Route53 record — chỉ tạo khi ALB đã tồn tại
+# ─── ALB lookup: monitoring stack (Grafana) ─────
+data "aws_lb" "monitoring" {
+  count = var.alb_exists ? 1 : 0
+
+  tags = {
+    "elbv2.k8s.aws/cluster"    = local.cluster_name
+    "ingress.k8s.aws/resource" = "LoadBalancer"
+    "ingress.k8s.aws/stack"    = "monitoring"
+  }
+}
+
+# ─── A record: task-manager.vantai.click ────────
 resource "aws_route53_record" "app" {
   count   = var.alb_exists ? 1 : 0
   zone_id = local.zone_id
@@ -60,6 +73,24 @@ resource "aws_route53_record" "app" {
   alias {
     name                   = data.aws_lb.app[0].dns_name
     zone_id                = data.aws_lb.app[0].zone_id
+    evaluate_target_health = true
+  }
+}
+
+# ─── A record: grafana.vantai.click ─────────────
+resource "aws_route53_record" "grafana" {
+  count   = var.alb_exists ? 1 : 0
+  zone_id = local.zone_id
+  name    = "grafana.${var.domain_name}"
+  type    = "A"
+
+  # ⚠️ allow_overwrite=true để take ownership của record đã tạo manual
+  # (Trước đó tạo qua aws CLI, giờ Terraform manage)
+  allow_overwrite = true
+
+  alias {
+    name                   = data.aws_lb.monitoring[0].dns_name
+    zone_id                = data.aws_lb.monitoring[0].zone_id
     evaluate_target_health = true
   }
 }
