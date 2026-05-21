@@ -14,6 +14,11 @@ require('./models/Task');
 const authRoutes = require('./routes/auth.routes');
 const taskRoutes = require('./routes/task.routes');
 
+const { register } = require('./config/metrics');
+const metricsMiddleware = require('./middleware/metrics.middleware');
+
+
+
 /**
  * Application bootstrap with graceful shutdown.
  *
@@ -45,6 +50,7 @@ app.use(pinoHttp({
   },
 }));
 
+
 app.use(cors());
 app.use(express.json());
 
@@ -58,6 +64,20 @@ app.use(express.json());
 //
 // Why split? See https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/
 
+app.use(metricsMiddleware);
+
+// ─── Metrics endpoint ────────────────────────────────────────────
+// IMPORTANT: KHÔNG yêu cầu auth — Prometheus scrape không có credential
+// Trong production: dùng NetworkPolicy chỉ allow Prometheus pod scrape
+app.get('/metrics', async (req, res) => {
+  try {
+    res.set('Content-Type', register.contentType);
+    res.end(await register.metrics());
+  } catch (err) {
+    logger.error({ err }, 'Failed to expose metrics');
+    res.status(500).end();
+  }
+});
 
 const healthRouter = express.Router();
 healthRouter.get('/live', (req, res) => {
