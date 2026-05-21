@@ -454,10 +454,10 @@ tf-destroy-network:
 # ⭐ DESTROY ALL — đúng thứ tự, có safety checks
 # ⭐ DESTROY ALL — Phase 6 workflow (GitOps-aware)
 destroy-all: confirm-destroy
-	@$(MAKE) tf-destroy-dns-phase2
-	@$(MAKE) k8s-delete
-	@$(MAKE) argocd-cleanup
-	@$(MAKE) tf-destroy-dns-phase1
+# 	@$(MAKE) tf-destroy-dns-phase2
+# 	@$(MAKE) k8s-delete
+# 	@$(MAKE) argocd-cleanup
+# 	@$(MAKE) tf-destroy-dns-phase1
 	@$(MAKE) tf-destroy-secrets
 	@$(MAKE) tf-destroy-rds
 	@$(MAKE) tf-destroy-eks
