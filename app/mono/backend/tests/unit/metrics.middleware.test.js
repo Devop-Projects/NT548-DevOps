@@ -2,7 +2,7 @@ jest.mock('../../src/config/metrics', () => ({
   httpRequestsTotal: {
     inc: jest.fn(),
   },
-  httpRequestDuration: {
+  httpRequestDurationSeconds: {
     startTimer: jest.fn(() => jest.fn()),
   },
 }));
@@ -10,7 +10,7 @@ jest.mock('../../src/config/metrics', () => ({
 const metricsMiddleware = require('../../src/middleware/metrics.middleware');
 const {
   httpRequestsTotal,
-  httpRequestDuration,
+  httpRequestDurationSeconds,
 } = require('../../src/config/metrics');
 
 describe('metrics.middleware', () => {
@@ -30,7 +30,7 @@ describe('metrics.middleware', () => {
     metricsMiddleware(req, res, next);
 
     expect(next).toHaveBeenCalled();
-    expect(httpRequestDuration.startTimer).not.toHaveBeenCalled();
+    expect(httpRequestDurationSeconds.startTimer).not.toHaveBeenCalled();
   });
 
   it('should record metrics on normal request', () => {
