@@ -141,7 +141,8 @@ setInterval(() => {
       dbPoolActive.set(pool.using || 0);
       dbPoolWaiting.set(pool.pending || 0);
     }
-  } catch (err) {
+  } catch {
     // Silently ignore — không fail app vì metric
+    // (intentional: metrics polling must not crash the app)
   }
 }, 5000).unref();
