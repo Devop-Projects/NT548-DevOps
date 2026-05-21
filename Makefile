@@ -104,7 +104,7 @@ tf-apply-secrets:  ## Apply secrets state (JWT + KMS)
 # ⭐ tf-apply-infrastructure — bao gồm tất cả states cần thiết
 # Order matters: network → eks → rds (depends on eks SG) → secrets (independent)
 .PHONY: tf-apply-infrastructure
-tf-apply-infrastructure: tf-apply-rds tf-apply-secrets
+tf-apply-infrastructure: tf-apply-network tf-apply-eks tf-apply-rds tf-apply-secrets
 
 .PHONY: tf-apply-dns-phase1
 tf-apply-dns-phase1:  ## Apply DNS phase 1: ACM + Hosted Zone
@@ -229,6 +229,23 @@ verify-secrets:  ## Kiểm tra secret sync chain hoạt động
 deploy-all: tf-init-all tf-apply-infrastructure tf-apply-dns-phase1 k8s-render k8s-deploy k8s-wait-alb tf-apply-dns-phase2
 	@cd $(K8S_OVERLAY) && kubectl apply -k .
 	@$(MAKE) verify
+
+.PHONY: verify-monitoring
+verify-monitoring:  ## Verify Prometheus + Grafana ready
+	@echo "$(COLOR_BLUE)═══ Monitoring stack status ═══$(COLOR_RESET)"
+	@kubectl -n monitoring get pods
+	@echo ""
+	@echo "$(COLOR_BLUE)═══ ServiceMonitors discovered ═══$(COLOR_RESET)"
+	@kubectl get servicemonitor -A
+	@echo ""
+	@echo "$(COLOR_BLUE)═══ Prometheus targets (backend) ═══$(COLOR_RESET)"
+	@kubectl -n monitoring exec sts/prometheus-kube-prometheus-stack-prometheus -c prometheus -- \
+	  wget -qO- 'http://localhost:9090/api/v1/targets?state=active' 2>/dev/null | \
+	  grep -o '"job":"[^"]*"' | sort -u || echo "  (Prometheus not ready yet)"
+	@echo ""
+	@echo "$(COLOR_BLUE)═══ Grafana endpoint ═══$(COLOR_RESET)"
+	@DOMAIN=$$(cd $(ENVS_DIR)/dns && terraform output -raw domain_name 2>/dev/null || echo "vantai.click"); \
+	curl -sk -o /dev/null -w "  grafana.$$DOMAIN  → HTTP %{http_code}\n" https://grafana.$$DOMAIN/api/health
 
 .PHONY: verify
 verify:
