@@ -133,8 +133,16 @@ yq eval -i ".backend.config.DB_HOST = \"$RDS_ENDPOINT\"" "$VALUES_FILE"
 yq eval -i ".backend.externalSecret.dbSecretName = \"$RDS_SECRET_NAME\"" "$VALUES_FILE"
 yq eval -i ".ingress.alb.certificateArn = \"$ACM_CERT_ARN\"" "$VALUES_FILE"
 
-# kube-prometheus-stack.yaml — use sed because yq struggles with embedded Helm values
-sed -i "s|certificate-arn: \"\(arn:aws:acm:[^\"]*\|__ACM_CERT_ARN__\)\"|certificate-arn: \"$ACM_CERT_ARN\"|g" "$KPS_APP_FILE"
+# kube-prometheus-stack.yaml — update cert ARN safely with yq
+TEMP_VALUES=$(mktemp)
+
+yq eval '.spec.source.helm.values' "$KPS_APP_FILE" > "$TEMP_VALUES"
+
+yq eval -i ".grafana.ingress.annotations.\"alb.ingress.kubernetes.io/certificate-arn\" = \"$ACM_CERT_ARN\"" "$TEMP_VALUES"
+
+yq eval -i ".spec.source.helm.values = load_str(\"$TEMP_VALUES\")" "$KPS_APP_FILE"
+
+rm -f "$TEMP_VALUES"
 
 echo -e "${GREEN}✓ Files updated${NC}"
 
