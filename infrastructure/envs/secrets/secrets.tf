@@ -72,3 +72,52 @@ output "kms_key_arn" {
 output "kms_key_alias" {
   value = aws_kms_alias.secrets.name
 }
+# ═══════════════════════════════════════════════════════════════
+# Grafana admin credentials (Phase 7.2+)
+# ═══════════════════════════════════════════════════════════════
+#
+# Why separate secret from backend?
+# - Different "blast radius": app secrets vs platform secrets
+# - Different rotation policies: app team rotates JWT, platform team rotates Grafana
+# - Different IAM scope (cleaner audit trail)
+
+resource "random_password" "grafana_admin" {
+  length           = 32
+  special          = true
+  override_special = "!@#$%^&*-_=+"
+}
+
+resource "aws_secretsmanager_secret" "grafana" {
+  name        = "${var.project}/${var.environment}/grafana"
+  description = "Grafana admin credentials"
+  kms_key_id  = aws_kms_key.secrets.arn
+
+  recovery_window_in_days = 0 # Dev: instant delete. Prod: 7-30
+
+  tags = {
+    Component = "monitoring"
+  }
+}
+
+resource "aws_secretsmanager_secret_version" "grafana" {
+  secret_id = aws_secretsmanager_secret.grafana.id
+
+  secret_string = jsonencode({
+    admin-user     = "admin"
+    admin-password = random_password.grafana_admin.result
+  })
+
+  lifecycle {
+    ignore_changes = [secret_string] # Same pattern as backend
+  }
+}
+
+output "grafana_secret_arn" {
+  description = "ARN of Grafana credentials secret"
+  value       = aws_secretsmanager_secret.grafana.arn
+}
+
+output "grafana_secret_name" {
+  description = "Name for ExternalSecret remoteRef.key"
+  value       = aws_secretsmanager_secret.grafana.name
+}

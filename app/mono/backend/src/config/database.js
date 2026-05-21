@@ -1,5 +1,6 @@
 const { Sequelize } = require('sequelize');
 const logger = require('./logger');
+const { dbPoolActive, dbPoolWaiting } = require('./metrics');
 require('dotenv').config();
 
 /**
@@ -130,3 +131,17 @@ sequelize.testConnection = async function() {
 };
 
 module.exports = sequelize;
+
+// Update pool gauges mỗi 5s
+setInterval(() => {
+  try {
+    const pool = sequelize.connectionManager.pool;
+    if (pool) {
+      // pool.size = total, pool.available = idle, pool.using = active
+      dbPoolActive.set(pool.using || 0);
+      dbPoolWaiting.set(pool.pending || 0);
+    }
+  } catch (err) {
+    // Silently ignore — không fail app vì metric
+  }
+}, 5000).unref();

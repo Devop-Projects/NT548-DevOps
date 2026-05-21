@@ -6,10 +6,10 @@
 #
 # Khi cần deploy multi-env: COPY file này thành common-prod.tfvars rồi đổi.
 
-project        = "devops"
-environment    = "dev"
-region         = "ap-southeast-1"
-owner          = "vantai"
+project     = "devops"
+environment = "dev"
+region      = "ap-southeast-1"
+owner       = "vantai"
 
 # Cho remote_state lookup (đọc state của state khác)
 tfstate_bucket = "thesis-tfstate-954692413669"

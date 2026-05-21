@@ -2,6 +2,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const logger = require('../config/logger');
+const { authFailuresTotal } = require('../config/metrics');
 
 /**
  * Authentication controller.
@@ -60,6 +61,8 @@ const login = async (req, res) => {
     const { email, password } = req.body;
 
     if (!email || !password) {
+      authFailuresTotal.inc({ reason: 'missing_credentials' });
+
       return res.status(400).json({
         message: 'Email and password required'
       });
@@ -70,11 +73,15 @@ const login = async (req, res) => {
       // Same response time as wrong password (prevent user enumeration)
       // Note: Still vulnerable to timing attack since bcrypt only runs if user exists.
       // Phase 5 will fix with dummy bcrypt comparison.
+      authFailuresTotal.inc({ reason: 'user_not_found' });
+
       return res.status(401).json({ message: 'Invalid email or password' });
     }
 
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
+      authFailuresTotal.inc({ reason: 'wrong_password' });
+
       logger.debug({ email }, 'Failed login attempt');
       return res.status(401).json({ message: 'Invalid email or password' });
     }

@@ -1,5 +1,6 @@
 const Task = require('../models/Task');
 const logger = require('../config/logger');
+const { tasksCreatedTotal } = require('../config/metrics');
 
 const getAllTasks = async (req, res) => {
   try {
@@ -24,6 +25,8 @@ const createTask = async (req, res) => {
       description: description?.trim() || '',
       userId: req.user.id
     });
+
+    tasksCreatedTotal.inc();
 
     logger.info({ taskId: task.id, userId: req.user.id }, 'Task created');
     res.status(201).json(task);
