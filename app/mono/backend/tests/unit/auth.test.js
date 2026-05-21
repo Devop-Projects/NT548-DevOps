@@ -13,6 +13,12 @@ jest.mock('../../src/config/logger', () => ({
   debug: jest.fn(),
 }));
 
+jest.mock('../../src/config/metrics', () => ({
+  authFailuresTotal: {
+    inc: jest.fn(),
+  },
+}));
+
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../../src/models/User');
