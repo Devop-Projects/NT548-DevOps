@@ -1,4 +1,4 @@
-const { httpRequestsTotal, httpRequestDuration } = require('../config/metrics');
+const { httpRequestsTotal, httpRequestDurationSeconds } = require('../config/metrics');
 
 /**
  * Middleware đo metrics cho mọi HTTP request.
@@ -17,7 +17,7 @@ function metricsMiddleware(req, res, next) {
   }
 
   // Start timer
-  const endTimer = httpRequestDuration.startTimer();
+const endTimer = httpRequestDurationSeconds.startTimer();
 
   // Hook vào response finish event
   res.on('finish', () => {

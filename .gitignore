@@ -74,3 +74,4 @@ k8s/overlays/aws/*.bak
 
 infrastructure/envs/*/common.auto.tfvars
 infrastructure/envs/eks/*helm
+infrastructure/envs/eks/.helm
