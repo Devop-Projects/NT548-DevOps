@@ -62,9 +62,24 @@ const dbPoolConnectionsActive = new promClient.Gauge({
   registers: [register],
 });
 
+const tasksCreatedTotal = new promClient.Counter({
+  name: 'tasks_created_total',
+  help: 'Total tasks created',
+  registers: [register],
+});
+
+const authFailuresTotal = new promClient.Counter({
+  name: 'auth_failures_total',
+  help: 'Total auth failures',
+  labelNames: ['reason'],
+  registers: [register],
+});
+
 module.exports = {
   register,
   httpRequestsTotal,
   httpRequestDurationSeconds,
   dbPoolConnectionsActive,
+  tasksCreatedTotal,    // ← thêm
+  authFailuresTotal,    // ← thêm
 };

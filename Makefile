@@ -181,9 +181,9 @@ deploy: preflight  ## Deploy full system từ zero (~35 phút)
 	echo "$(COLOR_CYAN)  6. DNS Phase 2: A records (~1 min)$(COLOR_RESET)"; \
 	echo "$(COLOR_CYAN)  7. Verify end-to-end$(COLOR_RESET)"; \
 	echo ""; \
-	$(MAKE) _stage-1-infrastructure || { echo "$(COLOR_RED)✗ Stage 1 failed$(COLOR_RESET)"; exit 1; }; \
-	$(MAKE) _stage-2-dns-phase1 || { echo "$(COLOR_RED)✗ Stage 2 failed$(COLOR_RESET)"; exit 1; }; \
-	$(MAKE) _stage-3-sync-helm-values || { echo "$(COLOR_RED)✗ Stage 3 failed$(COLOR_RESET)"; exit 1; }; \
+# 	$(MAKE) _stage-1-infrastructure || { echo "$(COLOR_RED)✗ Stage 1 failed$(COLOR_RESET)"; exit 1; }; \
+# 	$(MAKE) _stage-2-dns-phase1 || { echo "$(COLOR_RED)✗ Stage 2 failed$(COLOR_RESET)"; exit 1; }; \
+# 	$(MAKE) _stage-3-sync-helm-values || { echo "$(COLOR_RED)✗ Stage 3 failed$(COLOR_RESET)"; exit 1; }; \
 	$(MAKE) _stage-4-argocd || { echo "$(COLOR_RED)✗ Stage 4 failed$(COLOR_RESET)"; exit 1; }; \
 	$(MAKE) _stage-5-wait-alb || { echo "$(COLOR_RED)✗ Stage 5 failed$(COLOR_RESET)"; exit 1; }; \
 	$(MAKE) _stage-6-dns-phase2 || { echo "$(COLOR_RED)✗ Stage 6 failed$(COLOR_RESET)"; exit 1; }; \
@@ -347,13 +347,15 @@ _install-argocd:
 	@echo ""
 	@echo "$(COLOR_BLUE)▶ [1/2] Installing ArgoCD...$(COLOR_RESET)"
 	@echo "$(COLOR_CYAN)  Note: ArgoCD doesn't manage itself (chicken-and-egg)$(COLOR_RESET)"
-	@echo "$(COLOR_CYAN)  Installing from official manifest$(COLOR_RESET)"
+	@echo "$(COLOR_CYAN)  Installing from official manifest with --server-side$(COLOR_RESET)"
+	@echo "$(COLOR_CYAN)  (--server-side avoids 'annotation too long' error for large CRDs)$(COLOR_RESET)"
 	@kubectl get namespace $(ARGOCD_NAMESPACE) >/dev/null 2>&1 || { \
 	  echo "  $(COLOR_GRAY)→ Creating namespace argocd$(COLOR_RESET)"; \
 	  kubectl create namespace $(ARGOCD_NAMESPACE); }
-	@echo "  $(COLOR_GRAY)→ Applying ArgoCD manifests...$(COLOR_RESET)"
+	@echo "  $(COLOR_GRAY)→ Applying ArgoCD manifests (server-side)...$(COLOR_RESET)"
 	@kubectl apply -n $(ARGOCD_NAMESPACE) \
-	  -f https://raw.githubusercontent.com/argoproj/argo-cd/$(ARGOCD_VERSION)/manifests/install.yaml > /dev/null
+	  -f https://raw.githubusercontent.com/argoproj/argo-cd/$(ARGOCD_VERSION)/manifests/install.yaml \
+	  --server-side > /dev/null
 	@echo "$(COLOR_BLUE)▶ Waiting for ArgoCD deployments (~3 min)...$(COLOR_RESET)"
 	@echo "$(COLOR_CYAN)  Deployments: argocd-server, repo-server, applicationset, dex, notifications$(COLOR_RESET)"
 	@kubectl wait --for=condition=Available deployment --all \
@@ -372,6 +374,21 @@ _bootstrap-apps:
 	  -n external-secrets --timeout=180s
 	@kubectl get crd externalsecrets.external-secrets.io >/dev/null
 	@echo "$(COLOR_GREEN)  ✓ ESO ready, CRDs installed$(COLOR_RESET)"
+	@echo ""
+	@echo "$(COLOR_BLUE)▶ Pre-step: Apply ClusterSecretStore BEFORE monitoring apps$(COLOR_RESET)"
+	@echo "$(COLOR_CYAN)  Why? grafana-admin-secret ExternalSecret needs ClusterSecretStore$(COLOR_RESET)"
+	@echo "$(COLOR_CYAN)  to exist BEFORE monitoring-extras syncs. Otherwise Health=Degraded.$(COLOR_RESET)"
+	@kubectl apply -f $(CONFIG_REPO)/apps/task-manager/overlays/dev/secret-store.yaml > /dev/null || true
+	@echo "  $(COLOR_GRAY)→ Verifying ClusterSecretStore is ready...$(COLOR_RESET)"
+	@for i in $$(seq 1 12); do \
+	  STATUS=$$(kubectl get clustersecretstore aws-secrets-manager \
+	    -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "Unknown"); \
+	  if [ "$$STATUS" = "True" ]; then \
+	    echo "$(COLOR_GREEN)  ✓ ClusterSecretStore ready$(COLOR_RESET)"; break; \
+	  fi; \
+	  echo "  [Attempt $$i/12] ClusterSecretStore status: $$STATUS, waiting 10s..."; \
+	  sleep 10; \
+	done
 	@echo ""
 	@echo "$(COLOR_BLUE)▶ Tier 1: Apply monitoring + tools ArgoCD apps$(COLOR_RESET)"
 	@echo "  $(COLOR_GRAY)→ Applying monitoring-extras (StorageClass, grafana secret)$(COLOR_RESET)"
@@ -394,12 +411,12 @@ _bootstrap-apps:
 	@$(MAKE) _wait-app APP=task-manager-dev TIMEOUT=600
 	@echo ""
 	@echo "$(COLOR_GREEN)  ✓ All ArgoCD apps Synced + Healthy$(COLOR_RESET)"
-
 # Helper: wait cho 1 ArgoCD application Synced + Healthy
 .PHONY: _wait-app
 _wait-app:
 	@if [ -z "$(APP)" ]; then echo "Usage: make _wait-app APP=name"; exit 1; fi
 	@TIMEOUT=$${TIMEOUT:-300}; ELAPSED=0; INTERVAL=15; \
+	LAST_SYNC=""; LAST_HEALTH=""; DEGRADED_COUNT=0; \
 	echo "  $(COLOR_BLUE)Waiting for ArgoCD app: $(APP) (max $${TIMEOUT}s)$(COLOR_RESET)"; \
 	while [ $$ELAPSED -lt $$TIMEOUT ]; do \
 	  SYNC=$$(kubectl get application $(APP) -n $(ARGOCD_NAMESPACE) \
@@ -407,9 +424,26 @@ _wait-app:
 	  HEALTH=$$(kubectl get application $(APP) -n $(ARGOCD_NAMESPACE) \
 	    -o jsonpath='{.status.health.status}' 2>/dev/null || echo "Unknown"); \
 	  if [ "$$SYNC" = "Synced" ] && [ "$$HEALTH" = "Healthy" ]; then \
-	    echo "$(COLOR_GREEN)    ✓ $(APP) ready ($${ELAPSED}s)$(COLOR_RESET)"; exit 0; \
+	    echo "$(COLOR_GREEN)    ✓ $(APP) Synced + Healthy ($${ELAPSED}s)$(COLOR_RESET)"; exit 0; \
 	  fi; \
-	  printf "    [%ds] Sync=%s Health=%s\n" $$ELAPSED $$SYNC $$HEALTH; \
+	  if [ "$$SYNC" = "Synced" ] && [ "$$HEALTH" = "Degraded" ]; then \
+	    DEGRADED_COUNT=$$((DEGRADED_COUNT + 1)); \
+	    DETAIL=$$(kubectl get application $(APP) -n $(ARGOCD_NAMESPACE) \
+	      -o jsonpath='{.status.conditions[*].message}' 2>/dev/null | head -c 200); \
+	    printf "    [%ds] Sync=%s Health=%s (Degraded#%d) %s\n" \
+	      $$ELAPSED $$SYNC $$HEALTH $$DEGRADED_COUNT "$$DETAIL"; \
+	    if [ $$DEGRADED_COUNT -ge 8 ]; then \
+	      echo "$(COLOR_RED)    ✗ $(APP) stuck Degraded after $${ELAPSED}s - investigating...$(COLOR_RESET)"; \
+	      echo "$(COLOR_YELLOW)    Check ExternalSecret status:$(COLOR_RESET)"; \
+	      kubectl get externalsecret -A 2>/dev/null || true; \
+	      echo "$(COLOR_YELLOW)    Check ClusterSecretStore:$(COLOR_RESET)"; \
+	      kubectl get clustersecretstore 2>/dev/null || true; \
+	      kubectl describe application $(APP) -n $(ARGOCD_NAMESPACE) | tail -20; \
+	      exit 1; \
+	    fi; \
+	  else \
+	    printf "    [%ds] Sync=%s Health=%s\n" $$ELAPSED $$SYNC $$HEALTH; \
+	  fi; \
 	  sleep $$INTERVAL; ELAPSED=$$((ELAPSED + INTERVAL)); \
 	done; \
 	echo "$(COLOR_RED)    ✗ $(APP) timeout after $${TIMEOUT}s$(COLOR_RESET)"; \
@@ -511,23 +545,12 @@ destroy:  ## Xóa sạch mọi resource (CẨN THẬN)
 	  echo "$(COLOR_YELLOW)Aborted by user$(COLOR_RESET)"; exit 1; \
 	fi
 	@SECONDS=0; \
-	echo ""; \
-	echo "$(COLOR_CYAN)Destroy order (dependencies):$(COLOR_RESET)"; \
-	echo "$(COLOR_CYAN)  1. DNS Phase 2 (remove A records first)$(COLOR_RESET)"; \
-	echo "$(COLOR_CYAN)  2. K8s Ingress (frees ALBs)$(COLOR_RESET)"; \
-	echo "$(COLOR_CYAN)  3. Wait ALBs deleted$(COLOR_RESET)"; \
-	echo "$(COLOR_CYAN)  4. ArgoCD apps$(COLOR_RESET)"; \
-	echo "$(COLOR_CYAN)  5. DNS Phase 1 (ACM cert)$(COLOR_RESET)"; \
-	echo "$(COLOR_CYAN)  6. Secrets$(COLOR_RESET)"; \
-	echo "$(COLOR_CYAN)  7. RDS$(COLOR_RESET)"; \
-	echo "$(COLOR_CYAN)  8. EKS$(COLOR_RESET)"; \
-	echo "$(COLOR_CYAN)  9. Network$(COLOR_RESET)"; \
-	echo ""; \
 	$(MAKE) _destroy-stage-1-dns-phase2 || true; \
 	$(MAKE) _destroy-stage-2-k8s-resources || true; \
+	$(MAKE) _cleanup-orphan-albs || true; \
 	$(MAKE) _destroy-stage-3-wait-alb-gone || true; \
 	$(MAKE) _destroy-stage-4-argocd || true; \
-	$(MAKE) _destroy-stage-5-dns-phase1 || { echo "$(COLOR_RED)✗ Stage 5 failed — see workaround above$(COLOR_RESET)"; exit 1; }; \
+	$(MAKE) _destroy-stage-5-dns-phase1 || { echo "$(COLOR_RED)✗ Stage 5 failed$(COLOR_RESET)"; exit 1; }; \
 	$(MAKE) _destroy-stage-6-secrets || exit 1; \
 	$(MAKE) _destroy-stage-7-rds || exit 1; \
 	$(MAKE) _destroy-stage-8-eks || exit 1; \
@@ -598,6 +621,58 @@ _destroy-stage-3-wait-alb-gone:
 	done; \
 	echo "$(COLOR_YELLOW)  ⚠ Timeout — some ALBs still exist, continuing anyway$(COLOR_RESET)"
 
+# ─── Helper: Cleanup orphan ALBs trong VPC ────────────────────────────────
+# 
+# Triết lý: KHÔNG tin vào AWS LB Controller cleanup tự động.
+# Khi destroy EKS, LBC pod chết → ALBs có thể bị orphan.
+# Cleanup explicit qua AWS CLI để chắc chắn.
+.PHONY: _cleanup-orphan-albs
+_cleanup-orphan-albs:
+	@echo ""
+	@echo "$(COLOR_BLUE)▶ Cleanup orphan ALBs in VPC...$(COLOR_RESET)"
+	@VPC_ID=$$(cd $(ENVS_DIR)/dev && terraform state show 'module.vpc.aws_vpc.this[0]' 2>/dev/null | \
+	  grep '^    id' | awk '{print $$3}' | tr -d '"' || echo ""); \
+	if [ -z "$$VPC_ID" ]; then \
+	  echo "$(COLOR_YELLOW)  ⚠ No VPC ID (network state may be empty), skipping$(COLOR_RESET)"; \
+	  exit 0; \
+	fi; \
+	echo "  $(COLOR_GRAY)→ VPC: $$VPC_ID$(COLOR_RESET)"; \
+	ALB_ARNS=$$(aws elbv2 describe-load-balancers \
+	  --region $(REGION) \
+	  --query "LoadBalancers[?VpcId=='$$VPC_ID'].LoadBalancerArn" \
+	  --output text 2>/dev/null); \
+	if [ -z "$$ALB_ARNS" ] || [ "$$ALB_ARNS" = "None" ]; then \
+	  echo "$(COLOR_GREEN)  ✓ No ALBs in VPC$(COLOR_RESET)"; \
+	else \
+	  echo "  $(COLOR_GRAY)→ Found ALB(s) to delete$(COLOR_RESET)"; \
+	  for arn in $$ALB_ARNS; do \
+	    NAME=$$(echo $$arn | awk -F'/' '{print $$(NF-1)}'); \
+	    echo "  $(COLOR_GRAY)→ Deleting ALB: $$NAME$(COLOR_RESET)"; \
+	    aws elbv2 delete-load-balancer \
+	      --load-balancer-arn $$arn \
+	      --region $(REGION) || true; \
+	  done; \
+	  echo "  $(COLOR_GRAY)→ Waiting for ALBs to disappear (3 consecutive zeros)...$(COLOR_RESET)"; \
+	  ZERO_COUNT=0; \
+	  for i in $$(seq 1 30); do \
+	    COUNT=$$(aws elbv2 describe-load-balancers \
+	      --region $(REGION) \
+	      --query "length(LoadBalancers[?VpcId=='$$VPC_ID'])" \
+	      --output text 2>/dev/null || echo "0"); \
+	    if [ "$$COUNT" = "0" ]; then \
+	      ZERO_COUNT=$$((ZERO_COUNT + 1)); \
+	      echo "  $(COLOR_GRAY)[$$((i*10))s] ALB count=0 (confirmation $$ZERO_COUNT/3)$(COLOR_RESET)"; \
+	      if [ $$ZERO_COUNT -ge 3 ]; then \
+	        echo "$(COLOR_GREEN)  ✓ All ALBs confirmed deleted$(COLOR_RESET)"; \
+	        break; \
+	      fi; \
+	    else \
+	      ZERO_COUNT=0; \
+	      echo "  $(COLOR_GRAY)[$$((i*10))s] $$COUNT ALB(s) still exist, waiting...$(COLOR_RESET)"; \
+	    fi; \
+	    sleep 10; \
+	  done; \
+	fi
 # ─── Destroy Stage 4: ArgoCD apps + finalizers ────────────────────────────
 .PHONY: _destroy-stage-4-argocd
 _destroy-stage-4-argocd:
@@ -737,33 +812,133 @@ _destroy-stage-8-eks:
 	@cd $(ENVS_DIR)/eks && terraform destroy -auto-approve
 	@echo "$(COLOR_GREEN)  ✓ EKS destroyed$(COLOR_RESET)"
 
-# ─── Destroy Stage 9: Network (cleanup orphan SGs trước) ──────────────────
+# ─── Destroy Stage 9: Network với full orphan cleanup ──────────────────────
 .PHONY: _destroy-stage-9-network
 _destroy-stage-9-network:
 	@echo ""
 	@echo "$(COLOR_BOLD)$(COLOR_RED)═══════════════════════════════════════════════$(COLOR_RESET)"
-	@echo "$(COLOR_BOLD)$(COLOR_RED)  Destroy 9/9: Network + orphan SG cleanup$(COLOR_RESET)"
+	@echo "$(COLOR_BOLD)$(COLOR_RED)  Destroy 9/9: Network + orphan cleanup$(COLOR_RESET)"
 	@echo "$(COLOR_BOLD)$(COLOR_RED)═══════════════════════════════════════════════$(COLOR_RESET)"
-	@echo "$(COLOR_CYAN)  Final step: VPC, subnets, NAT gateway$(COLOR_RESET)"
-	@echo "$(COLOR_CYAN)  Also cleanup orphan Security Groups (created by AWS services)$(COLOR_RESET)"
+	@echo "$(COLOR_CYAN)  Final step. Cleanup orphan resources before terraform destroy:$(COLOR_RESET)"
+	@echo "$(COLOR_CYAN)    0. ALBs (Layer 2 fallback — in case some leaked through)$(COLOR_RESET)"
+	@echo "$(COLOR_CYAN)    1. ENIs (left by VPC CNI, ALB Controller)$(COLOR_RESET)"
+	@echo "$(COLOR_CYAN)    2. Elastic IPs (left by NAT Gateway)$(COLOR_RESET)"
+	@echo "$(COLOR_CYAN)    3. Security Groups (left by ALB Controller)$(COLOR_RESET)"
 	@echo ""
-	@VPC_ID=$$(cd $(ENVS_DIR)/dev && terraform output -raw vpc_id 2>/dev/null || echo ""); \
-	if [ -n "$$VPC_ID" ]; then \
-	  echo "$(COLOR_BLUE)▶ Checking for orphan Security Groups in VPC $$VPC_ID...$(COLOR_RESET)"; \
-	  SG_IDS=$$(aws ec2 describe-security-groups \
-	    --filters "Name=vpc-id,Values=$$VPC_ID" \
-	    --region $(REGION) \
-	    --query "SecurityGroups[?GroupName!='default'].GroupId" \
-	    --output text 2>/dev/null); \
-	  if [ -n "$$SG_IDS" ]; then \
-	    echo "  $(COLOR_GRAY)→ Found orphan SGs: $$SG_IDS$(COLOR_RESET)"; \
-	    for sg in $$SG_IDS; do \
-	      echo "  $(COLOR_GRAY)→ Deleting $$sg$(COLOR_RESET)"; \
-	      aws ec2 delete-security-group --group-id $$sg --region $(REGION) 2>&1 | head -3 || true; \
-	    done; \
-	  else \
-	    echo "  $(COLOR_GRAY)→ No orphan SGs$(COLOR_RESET)"; \
-	  fi; \
+	@# Layer 2 — defense in depth
+	@$(MAKE) _cleanup-orphan-albs || true
+	@$(MAKE) _cleanup-network-orphans
+	@echo ""
+	@echo "$(COLOR_BLUE)▶ Running terraform destroy on network state...$(COLOR_RESET)"
+	@cd $(ENVS_DIR)/dev && terraform destroy -auto-approve
+	@echo "$(COLOR_GREEN)  ✓ Network destroyed$(COLOR_RESET)"
+
+# Sub-helper: cleanup orphan resources trong VPC
+.PHONY: _cleanup-network-orphans
+_cleanup-network-orphans:
+	@VPC_ID=$$(cd $(ENVS_DIR)/dev && terraform state show 'module.vpc.aws_vpc.this[0]' 2>/dev/null | \
+	  grep '^    id' | awk '{print $$3}' | tr -d '"' || echo ""); \
+	if [ -z "$$VPC_ID" ]; then \
+	  echo "$(COLOR_YELLOW)  ⚠ Cannot find VPC ID, skipping orphan cleanup$(COLOR_RESET)"; \
+	  exit 0; \
+	fi; \
+	echo "$(COLOR_BLUE)▶ Working on VPC: $$VPC_ID$(COLOR_RESET)"; \
+	echo ""; \
+	echo "$(COLOR_BLUE)▶ [1/3] Cleanup orphan ENIs...$(COLOR_RESET)"; \
+	echo "  $(COLOR_GRAY)→ Sleep 60s for AWS to release ENIs after ALB deletion$(COLOR_RESET)"; \
+	sleep 60; \
+	ENI_IDS=$$(aws ec2 describe-network-interfaces \
+	  --filters "Name=vpc-id,Values=$$VPC_ID" \
+	  --region $(REGION) \
+	  --query 'NetworkInterfaces[].NetworkInterfaceId' \
+	  --output text 2>/dev/null); \
+	if [ -n "$$ENI_IDS" ]; then \
+	  for eni in $$ENI_IDS; do \
+	    echo "  $(COLOR_GRAY)→ Processing $$eni$(COLOR_RESET)"; \
+	    STATUS=$$(aws ec2 describe-network-interfaces \
+	      --network-interface-ids $$eni \
+	      --region $(REGION) \
+	      --query 'NetworkInterfaces[0].Status' --output text 2>/dev/null); \
+	    if [ "$$STATUS" = "in-use" ]; then \
+	      ATTACH_ID=$$(aws ec2 describe-network-interfaces \
+	        --network-interface-ids $$eni \
+	        --region $(REGION) \
+	        --query 'NetworkInterfaces[0].Attachment.AttachmentId' --output text 2>/dev/null); \
+	      if [ -n "$$ATTACH_ID" ] && [ "$$ATTACH_ID" != "None" ]; then \
+	        echo "    $(COLOR_GRAY)Detaching $$ATTACH_ID...$(COLOR_RESET)"; \
+	        aws ec2 detach-network-interface --attachment-id $$ATTACH_ID \
+	          --force --region $(REGION) 2>/dev/null || true; \
+	        sleep 5; \
+	      fi; \
+	    fi; \
+	    aws ec2 delete-network-interface --network-interface-id $$eni \
+	      --region $(REGION) 2>&1 | head -3 || true; \
+	  done; \
+	  echo "$(COLOR_GREEN)  ✓ ENIs cleaned$(COLOR_RESET)"; \
+	else \
+	  echo "  $(COLOR_GRAY)→ No orphan ENIs$(COLOR_RESET)"; \
+	fi; \
+	echo ""; \
+	echo "$(COLOR_BLUE)▶ [2/3] Cleanup orphan Elastic IPs...$(COLOR_RESET)"; \
+	EIP_ALLOCS=$$(aws ec2 describe-addresses --region $(REGION) \
+	  --query 'Addresses[].AllocationId' --output text 2>/dev/null); \
+	if [ -n "$$EIP_ALLOCS" ]; then \
+	  for alloc in $$EIP_ALLOCS; do \
+	    ASSOC_ID=$$(aws ec2 describe-addresses --allocation-ids $$alloc \
+	      --region $(REGION) \
+	      --query 'Addresses[0].AssociationId' --output text 2>/dev/null); \
+	    if [ -n "$$ASSOC_ID" ] && [ "$$ASSOC_ID" != "None" ]; then \
+	      echo "  $(COLOR_GRAY)→ Disassociating $$ASSOC_ID$(COLOR_RESET)"; \
+	      aws ec2 disassociate-address --association-id $$ASSOC_ID \
+	        --region $(REGION) 2>/dev/null || true; \
+	    fi; \
+	    echo "  $(COLOR_GRAY)→ Releasing $$alloc$(COLOR_RESET)"; \
+	    aws ec2 release-address --allocation-id $$alloc \
+	      --region $(REGION) 2>&1 | head -3 || true; \
+	  done; \
+	  echo "$(COLOR_GREEN)  ✓ EIPs released$(COLOR_RESET)"; \
+	else \
+	  echo "  $(COLOR_GRAY)→ No orphan EIPs$(COLOR_RESET)"; \
+	fi; \
+	echo ""; \
+	echo "$(COLOR_BLUE)▶ [3/3] Cleanup orphan Security Groups...$(COLOR_RESET)"; \
+	SG_IDS=$$(aws ec2 describe-security-groups \
+	  --filters "Name=vpc-id,Values=$$VPC_ID" \
+	  --region $(REGION) \
+	  --query "SecurityGroups[?GroupName!='default'].GroupId" \
+	  --output text 2>/dev/null); \
+	if [ -n "$$SG_IDS" ]; then \
+	  for sg in $$SG_IDS; do \
+	    echo "  $(COLOR_GRAY)→ Revoking rules in $$sg$(COLOR_RESET)"; \
+	    INGRESS=$$(aws ec2 describe-security-groups --group-ids $$sg \
+	      --region $(REGION) \
+	      --query 'SecurityGroups[0].IpPermissions' --output json 2>/dev/null); \
+	    if [ "$$INGRESS" != "[]" ] && [ -n "$$INGRESS" ]; then \
+	      echo "$$INGRESS" > /tmp/sg-ingress-$$sg.json; \
+	      aws ec2 revoke-security-group-ingress --group-id $$sg \
+	        --ip-permissions file:///tmp/sg-ingress-$$sg.json \
+	        --region $(REGION) 2>&1 | head -2 || true; \
+	      rm -f /tmp/sg-ingress-$$sg.json; \
+	    fi; \
+	    EGRESS=$$(aws ec2 describe-security-groups --group-ids $$sg \
+	      --region $(REGION) \
+	      --query 'SecurityGroups[0].IpPermissionsEgress' --output json 2>/dev/null); \
+	    if [ "$$EGRESS" != "[]" ] && [ -n "$$EGRESS" ]; then \
+	      echo "$$EGRESS" > /tmp/sg-egress-$$sg.json; \
+	      aws ec2 revoke-security-group-egress --group-id $$sg \
+	        --ip-permissions file:///tmp/sg-egress-$$sg.json \
+	        --region $(REGION) 2>&1 | head -2 || true; \
+	      rm -f /tmp/sg-egress-$$sg.json; \
+	    fi; \
+	  done; \
+	  echo "  $(COLOR_GRAY)→ Now deleting SGs (rules cleared)$(COLOR_RESET)"; \
+	  for sg in $$SG_IDS; do \
+	    aws ec2 delete-security-group --group-id $$sg \
+	      --region $(REGION) 2>&1 | head -3 || true; \
+	  done; \
+	  echo "$(COLOR_GREEN)  ✓ SGs cleaned$(COLOR_RESET)"; \
+	else \
+	  echo "  $(COLOR_GRAY)→ No orphan SGs$(COLOR_RESET)"; \
 	fi
 	@echo ""
 	@echo "$(COLOR_BLUE)▶ Running terraform destroy on network state...$(COLOR_RESET)"
@@ -1021,3 +1196,25 @@ shell-backend:  ## Mở shell vào 1 backend pod
 clean-tfvars-bak:  ## Xóa các file .bak terraform tạo ra
 	@find $(ENVS_DIR) -name 'terraform.tfvars.bak' -delete 2>/dev/null || true
 	@echo "$(COLOR_GREEN)✓ Cleaned$(COLOR_RESET)"
+
+.PHONY: clean-stage4
+clean-stage4:  ## Xóa ArgoCD apps + ClusterSecretStore để retry Stage 4
+	@echo ""
+	@echo "$(COLOR_BLUE)═══════════════════════════════════════════════$(COLOR_RESET)"
+	@echo "$(COLOR_BLUE)  Clean Stage 4 resources (ArgoCD apps)$(COLOR_RESET)"
+	@echo "$(COLOR_BLUE)═══════════════════════════════════════════════$(COLOR_RESET)"
+	@echo "$(COLOR_BLUE)▶ Removing finalizers from all ArgoCD apps...$(COLOR_RESET)"
+	@kubectl get applications -n $(ARGOCD_NAMESPACE) --no-headers 2>/dev/null | \
+	  awk '{print $$1}' | while read app; do \
+	    [ -n "$$app" ] && kubectl patch application $$app -n $(ARGOCD_NAMESPACE) \
+	      --type json -p '[{"op":"remove","path":"/metadata/finalizers"}]' 2>/dev/null || true; \
+	  done
+	@echo "$(COLOR_BLUE)▶ Deleting all ArgoCD applications...$(COLOR_RESET)"
+	@kubectl delete applications --all -n $(ARGOCD_NAMESPACE) \
+	  --cascade=foreground --timeout=120s 2>/dev/null || true
+	@echo "$(COLOR_BLUE)▶ Deleting ClusterSecretStore...$(COLOR_RESET)"
+	@kubectl delete clustersecretstore aws-secrets-manager 2>/dev/null || true
+	@echo "$(COLOR_BLUE)▶ Waiting 10s for resources to settle...$(COLOR_RESET)"
+	@sleep 10
+	@echo "$(COLOR_GREEN)✓ Stage 4 resources cleaned. Now run: make _stage-4-argocd$(COLOR_RESET)"
+	@echo ""
