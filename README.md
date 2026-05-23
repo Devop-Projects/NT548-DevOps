@@ -2,8 +2,8 @@
 
 > **Full-stack GitOps pipeline on AWS EKS** — CI/CD, Infrastructure as Code, Kubernetes, Observability, and Progressive Delivery.
 
-[![CI](https://github.com/Devop-Projects/NT548-DevOps/actions/workflows/ci.yml/badge.svg)](https://github.com/Devop-Projects/NT548-DevOps/actions/workflows/ci.yml)
-[![IaC Security](https://github.com/Devop-Projects/NT548-DevOps/actions/workflows/iac-security.yml/badge.svg)](https://github.com/Devop-Projects/NT548-DevOps/actions/workflows/iac-security.yml)
+[![CI](https://github.com/<YOUR_GITHUB_ORG>/<YOUR_APP_REPO>/actions/workflows/ci.yml/badge.svg)](https://github.com/<YOUR_GITHUB_ORG>/<YOUR_APP_REPO>/actions/workflows/ci.yml)
+[![IaC Security](https://github.com/<YOUR_GITHUB_ORG>/<YOUR_APP_REPO>/actions/workflows/iac-security.yml/badge.svg)](https://github.com/<YOUR_GITHUB_ORG>/<YOUR_APP_REPO>/actions/workflows/iac-security.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ---
@@ -30,7 +30,7 @@
 
 NT548 Task Manager is a **production-grade three-tier web application** built as a university DevOps thesis project. It demonstrates end-to-end DevOps practices: from local development to fully automated AWS cloud deployment with GitOps.
 
-**Live Demo:** `https://task-manager.vantai.click`
+**Live Demo:** `https://<YOUR_SUBDOMAIN>.<YOUR_DOMAIN>` *(requires Route53 domain — see [AWS Deployment](#aws-deployment))*
 
 ### Key Features
 
@@ -188,8 +188,8 @@ yq
 ### Local Development (Docker Compose)
 
 ```bash
-git clone https://github.com/Devop-Projects/NT548-DevOps.git
-cd NT548-DevOps/app/mono
+git clone https://github.com/<YOUR_ORG>/<YOUR_APP_REPO>.git
+cd <YOUR_APP_REPO>/app/mono
 
 # Set required environment variables
 cp .env.example .env.local
@@ -225,20 +225,44 @@ npm test
 
 ### AWS Deployment
 
+> **Prerequisites — customize these values before deploying:**
+>
+> | File | What to change |
+> |---|---|
+> | `infrastructure/common.tfvars` | `project`, `region`, `owner` |
+> | `infrastructure/envs/dns/terraform.tfvars` | `domain_name`, `subdomain` — requires a domain registered in Route53. **If you don't have a domain, set `dns` state aside and skip `make wake-dns`** |
+> | `infrastructure/envs/eks/terraform.tfvars` | `cluster_endpoint_public_access_cidrs` — restrict to your IP |
+> | `charts/task-manager/values-aws-dev.yaml` | `ingress.hosts[].host`, `ingress.alb.certificateArn` — updated automatically by `scripts/update-helm-values.sh` after deploy |
+> | `.github/workflows/ci.yml` | `DOCKERHUB_USERNAME` secret, `CONFIG_REPO_TOKEN` secret |
+> | `platform/argocd/apps/*.yaml` | `repoURL` — point to your fork of `nt548-config` |
+
+> **No Route53 domain?** You can still deploy everything except the `dns` state. After `make deploy`, access the app directly via the ALB DNS hostname:
+> ```bash
+> kubectl get ingress -n task-manager-dev
+> # Use the ADDRESS column directly in your browser
+> ```
+
 ```bash
-# 1. First-time setup: bootstrap Terraform state backend
+# 1. Clone and configure
+git clone https://github.com/<YOUR_ORG>/<YOUR_APP_REPO>.git
+cd <YOUR_APP_REPO>
+
+# Edit infrastructure/common.tfvars
+# Edit infrastructure/envs/dns/terraform.tfvars (or skip if no domain)
+
+# 2. First-time setup: bootstrap Terraform state backend (run once)
 make bootstrap
 
-# 2. Deploy everything (VPC → EKS → RDS → Secrets → DNS → ArgoCD → Apps)
+# 3. Deploy everything (VPC → EKS → RDS → Secrets → DNS → ArgoCD → Apps)
 make deploy        # ~35 minutes
 
-# 3. Verify
+# 4. Verify
 make verify
 
 # Cost saving: pause compute when not needed
-make hibernate     # Scales EKS to 0, stops RDS
+make hibernate     # Scales EKS to 0, stops RDS (~70% cost reduction)
 make wake          # Resumes everything
-make wake-dns      # Updates Route53 after wake (new ALB DNS)
+make wake-dns      # Updates Route53 after wake (new ALB DNS) — skip if no domain
 
 # Teardown
 make destroy
@@ -339,11 +363,11 @@ State dependency order (deploy in this sequence):
 ### Shared Variables
 
 ```bash
-# infrastructure/common.tfvars (symlinked as *.auto.tfvars in each state)
-project     = "devops"
+# infrastructure/common.tfvars — edit these before deploying
+project     = "devops"          # used in resource naming
 environment = "dev"
-region      = "ap-southeast-1"
-owner       = "vantai"
+region      = "ap-southeast-1"  # your AWS region
+owner       = "<your-name>"     # used in tags
 ```
 
 ### IaC Security
@@ -382,7 +406,7 @@ The backend exposes Prometheus metrics at `/metrics`:
 - Latency distribution heatmap
 - DB pool saturation gauge
 
-Access: `https://grafana.vantai.click` (credentials in AWS Secrets Manager `devops/dev/grafana`)
+Access: `https://grafana.<YOUR_DOMAIN>` (credentials in AWS Secrets Manager — path configured in `infrastructure/envs/secrets/secrets.tf`)
 
 ```bash
 # Retrieve Grafana admin password
@@ -528,7 +552,7 @@ Major versions of React and Express are excluded from auto-update and require ma
 
 ## 📡 API Reference
 
-Base URL: `https://task-manager.vantai.click/api`
+Base URL: `https://<YOUR_SUBDOMAIN>.<YOUR_DOMAIN>/api` (or the ALB hostname directly if no domain)
 
 ### Authentication
 
