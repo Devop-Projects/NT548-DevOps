@@ -181,9 +181,9 @@ deploy: preflight  ## Deploy full system từ zero (~35 phút)
 	echo "$(COLOR_CYAN)  6. DNS Phase 2: A records (~1 min)$(COLOR_RESET)"; \
 	echo "$(COLOR_CYAN)  7. Verify end-to-end$(COLOR_RESET)"; \
 	echo ""; \
-# 	$(MAKE) _stage-1-infrastructure || { echo "$(COLOR_RED)✗ Stage 1 failed$(COLOR_RESET)"; exit 1; }; \
-# 	$(MAKE) _stage-2-dns-phase1 || { echo "$(COLOR_RED)✗ Stage 2 failed$(COLOR_RESET)"; exit 1; }; \
-# 	$(MAKE) _stage-3-sync-helm-values || { echo "$(COLOR_RED)✗ Stage 3 failed$(COLOR_RESET)"; exit 1; }; \
+ 	$(MAKE) _stage-1-infrastructure || { echo "$(COLOR_RED)✗ Stage 1 failed$(COLOR_RESET)"; exit 1; }; \
+ 	$(MAKE) _stage-2-dns-phase1 || { echo "$(COLOR_RED)✗ Stage 2 failed$(COLOR_RESET)"; exit 1; }; \
+ 	$(MAKE) _stage-3-sync-helm-values || { echo "$(COLOR_RED)✗ Stage 3 failed$(COLOR_RESET)"; exit 1; }; \
 	$(MAKE) _stage-4-argocd || { echo "$(COLOR_RED)✗ Stage 4 failed$(COLOR_RESET)"; exit 1; }; \
 	$(MAKE) _stage-5-wait-alb || { echo "$(COLOR_RED)✗ Stage 5 failed$(COLOR_RESET)"; exit 1; }; \
 	$(MAKE) _stage-6-dns-phase2 || { echo "$(COLOR_RED)✗ Stage 6 failed$(COLOR_RESET)"; exit 1; }; \
