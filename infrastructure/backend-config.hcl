@@ -8,7 +8,7 @@
 #
 # Khi đổi account/region: CHỈ sửa file này, không sửa 8 file backend.tf.
 
-bucket         = "thesis-tfstate-954692413669"
+bucket         = "thesis-tfstate-113008551898"
 region         = "ap-southeast-1"
 dynamodb_table = "thesis-tfstate-locks"
 encrypt        = true

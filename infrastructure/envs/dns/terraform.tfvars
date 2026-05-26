@@ -1,7 +1,7 @@
 # envs/dns/terraform.tfvars
 
 # ⚠️ Đổi domain của bạn
-domain_name        = "vantai.click"
-subdomain          = "task-manager"
+domain_name        = "cookial.site"
+subdomain          = "www"
 create_hosted_zone = false
 alb_exists = false
