@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM node:18.19.0-alpine3.19 AS deps
+FROM node:23.3.0-alpine3.19 AS deps
 
 WORKDIR /app
 
@@ -9,7 +9,7 @@ COPY package*.json ./
 RUN --mount=type=cache,target=/root/.npm \
     npm ci --omit=dev
 
-FROM node:18.19.0-alpine3.19 AS runtime
+FROM node:23.3.0-alpine3.19 AS runtime
 
 ENV NODE_ENV=production \
     PORT=3000 \
