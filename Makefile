@@ -71,6 +71,7 @@ help:  ## Hiển thị help
 	@echo ""
 	@echo "$(COLOR_BOLD)⚙️  Setup (chỉ làm 1 lần):$(COLOR_RESET)"
 	@echo "  $(COLOR_GREEN)make preflight$(COLOR_RESET)           Check tools + credentials"
+	@echo "  $(COLOR_GREEN)make sync-config-repo$(COLOR_RESET)    Pull/rebase local nt548-config"
 	@echo "  $(COLOR_GREEN)make bootstrap$(COLOR_RESET)           Tạo S3 + DynamoDB cho TF state"
 	@echo ""
 	@echo "$(COLOR_GRAY)Tất cả target:$(COLOR_RESET)"
@@ -132,6 +133,47 @@ preflight:  ## Check tools, AWS credentials, config repo
 	@echo "$(COLOR_GREEN)$(COLOR_BOLD)✓ Preflight passed — ready to deploy$(COLOR_RESET)"
 	@echo ""
 
+.PHONY: sync-config-repo
+sync-config-repo:  ## Pull/rebase local nt548-config từ origin/main
+	@echo ""
+	@echo "$(COLOR_BLUE)═══════════════════════════════════════════════$(COLOR_RESET)"
+	@echo "$(COLOR_BLUE)  Sync Config Repo$(COLOR_RESET)"
+	@echo "$(COLOR_BLUE)═══════════════════════════════════════════════$(COLOR_RESET)"
+	@[ -d "$(CONFIG_REPO)/.git" ] || { \
+	  echo "$(COLOR_RED)  ✗ $(CONFIG_REPO) is not a git repo$(COLOR_RESET)"; \
+	  echo "$(COLOR_YELLOW)    Clone config repo first: git clone <url> $(CONFIG_REPO)$(COLOR_RESET)"; \
+	  exit 1; }
+	@cd "$(CONFIG_REPO)" && \
+	  export GIT_PAGER=cat; \
+	  BRANCH=$$(git rev-parse --abbrev-ref HEAD); \
+	  if [ "$$BRANCH" != "main" ]; then \
+	    echo "$(COLOR_RED)  ✗ Config repo must be on branch main, currently: $$BRANCH$(COLOR_RESET)"; \
+	    echo "$(COLOR_YELLOW)    Run: cd $(CONFIG_REPO) && git switch main$(COLOR_RESET)"; \
+	    exit 1; \
+	  fi; \
+	  if [ -d .git/rebase-merge ] || [ -d .git/rebase-apply ]; then \
+	    echo "$(COLOR_RED)  ✗ Config repo has an unfinished rebase$(COLOR_RESET)"; \
+	    echo "$(COLOR_YELLOW)    Resolve it in $(CONFIG_REPO), then rerun make sync-config-repo$(COLOR_RESET)"; \
+	    exit 1; \
+	  fi; \
+	  if [ -n "$$(git status --porcelain)" ]; then \
+	    echo "$(COLOR_RED)  ✗ Config repo has uncommitted changes$(COLOR_RESET)"; \
+	    git --no-pager status --short; \
+	    echo "$(COLOR_YELLOW)    Commit/stash these changes before syncing to avoid overwriting work.$(COLOR_RESET)"; \
+	    exit 1; \
+	  fi; \
+	  echo "$(COLOR_BLUE)▶ Fetching origin/main...$(COLOR_RESET)"; \
+	  git fetch origin main --quiet; \
+	  BEFORE=$$(git rev-parse --short HEAD); \
+	  git pull --rebase origin main; \
+	  AFTER=$$(git rev-parse --short HEAD); \
+	  if [ "$$BEFORE" = "$$AFTER" ]; then \
+	    echo "$(COLOR_GREEN)  ✓ Config repo already up to date ($$AFTER)$(COLOR_RESET)"; \
+	  else \
+	    echo "$(COLOR_GREEN)  ✓ Config repo synced: $$BEFORE → $$AFTER$(COLOR_RESET)"; \
+	  fi
+	@echo ""
+
 # ============================================================================
 # BOOTSTRAP — Chỉ chạy 1 lần trong đời project
 # ============================================================================
@@ -181,6 +223,7 @@ deploy: preflight  ## Deploy full system từ zero (~35 phút)
 	echo "$(COLOR_CYAN)  6. DNS Phase 2: A records (~1 min)$(COLOR_RESET)"; \
 	echo "$(COLOR_CYAN)  7. Verify end-to-end$(COLOR_RESET)"; \
 	echo ""; \
+ 	$(MAKE) sync-config-repo || { echo "$(COLOR_RED)✗ Config repo sync failed$(COLOR_RESET)"; exit 1; }; \
  	$(MAKE) _stage-1-infrastructure || { echo "$(COLOR_RED)✗ Stage 1 failed$(COLOR_RESET)"; exit 1; }; \
  	$(MAKE) _stage-2-dns-phase1 || { echo "$(COLOR_RED)✗ Stage 2 failed$(COLOR_RESET)"; exit 1; }; \
  	$(MAKE) _stage-3-sync-helm-values || { echo "$(COLOR_RED)✗ Stage 3 failed$(COLOR_RESET)"; exit 1; }; \
@@ -324,6 +367,7 @@ _stage-3-sync-helm-values:
 	@echo "$(COLOR_CYAN)  Script này đọc TF outputs → update file Helm values trong config repo$(COLOR_RESET)"
 	@echo "$(COLOR_CYAN)  Sau đó commit + push → ArgoCD sẽ pick up$(COLOR_RESET)"
 	@echo ""
+	@$(MAKE) sync-config-repo
 	@echo "$(COLOR_BLUE)▶ Running update-helm-values.sh --commit...$(COLOR_RESET)"
 	@./scripts/update-helm-values.sh --commit
 	@echo "$(COLOR_GREEN)  ✓ Config repo updated and pushed$(COLOR_RESET)"
@@ -367,6 +411,7 @@ _install-argocd:
 _bootstrap-apps:
 	@echo ""
 	@echo "$(COLOR_BLUE)▶ [2/2] Bootstrapping ArgoCD applications...$(COLOR_RESET)"
+	@$(MAKE) sync-config-repo
 	@echo ""
 	@echo "$(COLOR_BLUE)▶ Pre-check: External Secrets Operator must be ready$(COLOR_RESET)"
 	@echo "$(COLOR_CYAN)  Why? ESO installed by Terraform (not ArgoCD). ArgoCD apps depend on it.$(COLOR_RESET)"
@@ -881,17 +926,10 @@ _cleanup-network-orphans:
 	echo ""; \
 	echo "$(COLOR_BLUE)▶ [2/3] Cleanup orphan Elastic IPs...$(COLOR_RESET)"; \
 	EIP_ALLOCS=$$(aws ec2 describe-addresses --region $(REGION) \
-	  --query 'Addresses[].AllocationId' --output text 2>/dev/null); \
+	  --filters "Name=tag:Project,Values=$(PROJECT)" \
+	  --query 'Addresses[?!AssociationId].AllocationId' --output text 2>/dev/null); \
 	if [ -n "$$EIP_ALLOCS" ]; then \
 	  for alloc in $$EIP_ALLOCS; do \
-	    ASSOC_ID=$$(aws ec2 describe-addresses --allocation-ids $$alloc \
-	      --region $(REGION) \
-	      --query 'Addresses[0].AssociationId' --output text 2>/dev/null); \
-	    if [ -n "$$ASSOC_ID" ] && [ "$$ASSOC_ID" != "None" ]; then \
-	      echo "  $(COLOR_GRAY)→ Disassociating $$ASSOC_ID$(COLOR_RESET)"; \
-	      aws ec2 disassociate-address --association-id $$ASSOC_ID \
-	        --region $(REGION) 2>/dev/null || true; \
-	    fi; \
 	    echo "  $(COLOR_GRAY)→ Releasing $$alloc$(COLOR_RESET)"; \
 	    aws ec2 release-address --allocation-id $$alloc \
 	      --region $(REGION) 2>&1 | head -3 || true; \

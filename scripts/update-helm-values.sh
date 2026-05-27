@@ -17,6 +17,7 @@
 # ============================================================================
 
 set -euo pipefail
+export GIT_PAGER=cat
 
 # ─── Colors ───
 RED='\033[0;31m'
@@ -152,7 +153,7 @@ echo ""
 echo -e "${BLUE}═══════════════════════════════════════════════${NC}"
 echo -e "${BLUE}  Git diff${NC}"
 echo -e "${BLUE}═══════════════════════════════════════════════${NC}"
-git diff --no-color
+git --no-pager diff --no-color
 
 # ─── Commit + push ───
 if [ "$COMMIT" = true ]; then
