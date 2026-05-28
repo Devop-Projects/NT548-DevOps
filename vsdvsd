@@ -1,0 +1,65 @@
+{
+    "nodegroup": {
+        "nodegroupName": "devops-dev-default-20260527014123920700000015",
+        "nodegroupArn": "arn:aws:eks:ap-southeast-1:113008551898:nodegroup/devops-dev/devops-dev-default-20260527014123920700000015/7acf338b-fd3c-ecb4-e9d9-45757c7a9410",
+        "clusterName": "devops-dev",
+        "version": "1.30",
+        "releaseVersion": "1.30.14-20260520",
+        "createdAt": "2026-05-27T08:41:29.107000+07:00",
+        "modifiedAt": "2026-05-28T02:43:48.255000+07:00",
+        "status": "DELETING",
+        "capacityType": "SPOT",
+        "scalingConfig": {
+            "minSize": 1,
+            "maxSize": 4,
+            "desiredSize": 3
+        },
+        "instanceTypes": [
+            "t3.medium",
+            "t3a.medium"
+        ],
+        "subnets": [
+            "subnet-011b1a39982f1af30",
+            "subnet-0a13e71e0615414a1"
+        ],
+        "amiType": "AL2023_x86_64_STANDARD",
+        "nodeRole": "arn:aws:iam::113008551898:role/devops-dev-default-eks-node-group-20260527013124830400000002",
+        "labels": {
+            "environment": "dev",
+            "role": "general"
+        },
+        "resources": {
+            "autoScalingGroups": [
+                {
+                    "name": "eks-devops-dev-default-20260527014123920700000015-7acf338b-fd3c-ecb4-e9d9-45757c7a9410"
+                }
+            ]
+        },
+        "health": {
+            "issues": [
+                {
+                    "code": "AsgInstanceLaunchFailures",
+                    "message": "Could not launch Spot Instances. InvalidParameterCombination - The specified instance type is not eligible for Free Tier. For a list of Free Tier instance types, run 'describe-instance-types' with the filter 'free-tier-eligible=true'. Launching EC2 instance failed.",
+                    "resourceIds": [
+                        "eks-devops-dev-default-20260527014123920700000015-7acf338b-fd3c-ecb4-e9d9-45757c7a9410"
+                    ]
+                }
+            ]
+        },
+        "updateConfig": {
+            "maxUnavailablePercentage": 33
+        },
+        "launchTemplate": {
+            "name": "default-20260527014118186600000013",
+            "version": "1",
+            "id": "lt-0b5ab94d0a9132836"
+        },
+        "tags": {
+            "Project": "devops",
+            "Environment": "dev",
+            "ManagedBy": "terraform",
+            "Component": "eks",
+            "Name": "devops-dev-default"
+        }
+    }
+}

@@ -8,7 +8,7 @@ kubernetes_version = "1.30"
 cluster_endpoint_public_access_cidrs = ["0.0.0.0/0"]
 
 # Node group
-node_instance_types = ["t3.medium", "t3a.medium"]
+node_instance_types = ["c7i-flex.large"]
 node_capacity_type  = "SPOT"
 node_min_size       = 1
 node_max_size       = 4
