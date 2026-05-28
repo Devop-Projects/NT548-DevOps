@@ -1,0 +1,39 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: argocd-server
+  namespace: argocd
+  annotations:
+    # ─── cert-manager tự động cấp cert ───
+    cert-manager.io/cluster-issuer: selfsigned-issuer
+
+    # ─── Force redirect HTTP → HTTPS ───
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+
+    # ─── ArgoCD specific ───
+    # ArgoCD API gọi websocket, cần protoype upgrade
+    nginx.ingress.kubernetes.io/websocket-services: argocd-server
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+
+spec:
+  ingressClassName: nginx
+
+  # ─── TLS Configuration ───
+  tls:
+  - hosts:
+    - argocd.local
+    secretName: argocd-server-tls
+
+  rules:
+  - host: argocd.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: argocd-server
+            port:
+              number: 80
