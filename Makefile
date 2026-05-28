@@ -1177,8 +1177,8 @@ verify:  ## Verify end-to-end
 	fi
 	@echo ""
 	@echo "$(COLOR_BLUE)► Grafana endpoint$(COLOR_RESET)"
-	@curl -sk -o /dev/null -w "  $(COLOR_GRAY)→ grafana.vantai.click$(COLOR_RESET) → HTTP %{http_code}\n" \
-	  https://grafana.vantai.click/api/health 2>/dev/null
+	@curl -sk -o /dev/null -w "  $(COLOR_GRAY)→ grafana.cookial.site$(COLOR_RESET) → HTTP %{http_code}\n" \
+	  https://grafana.cookial.site/api/health 2>/dev/null
 	@echo ""
 	@echo "$(COLOR_BLUE)► Grafana credentials$(COLOR_RESET)"
 	@PASS=$$(kubectl get secret grafana-admin-secret -n monitoring \
