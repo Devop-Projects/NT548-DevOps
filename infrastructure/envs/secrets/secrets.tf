@@ -112,6 +112,7 @@ resource "aws_secretsmanager_secret_version" "grafana" {
   }
 }
 
+
 output "grafana_secret_arn" {
   description = "ARN of Grafana credentials secret"
   value       = aws_secretsmanager_secret.grafana.arn

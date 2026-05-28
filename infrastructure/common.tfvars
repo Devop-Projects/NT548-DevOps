@@ -9,7 +9,7 @@
 project     = "devops"
 environment = "dev"
 region      = "ap-southeast-1"
-owner       = "vantai"
+owner       = "ductho"
 
 # Cho remote_state lookup (đọc state của state khác)
-tfstate_bucket = "thesis-tfstate-954692413669"
+tfstate_bucket = "thesis-tfstate-113008551898"

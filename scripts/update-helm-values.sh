@@ -71,7 +71,6 @@ cd "$INFRA_DIR/envs/rds"
 RDS_ENDPOINT=$(terraform output -raw db_address 2>/dev/null) || { echo -e "${RED}✗ RDS state not applied${NC}"; exit 1; }
 RDS_SECRET_ARN=$(terraform output -raw db_master_user_secret_arn 2>/dev/null) || exit 1
 DB_NAME=$(terraform output -raw db_name 2>/dev/null) || exit 1
-RDS_SECRET_NAME=$(echo "$RDS_SECRET_ARN" | awk -F: '{print $NF}' | sed 's/-[A-Za-z0-9]*$//')
 
 cd "$INFRA_DIR/envs/dns"
 ACM_CERT_ARN=$(terraform output -raw acm_certificate_arn 2>/dev/null) || { echo -e "${RED}✗ DNS state not applied${NC}"; exit 1; }
@@ -80,7 +79,7 @@ cd "$INFRA_DIR/envs/secrets"
 BACKEND_SECRET_NAME=$(terraform output -raw backend_secret_name 2>/dev/null) || exit 1
 
 echo "  RDS_ENDPOINT         = $RDS_ENDPOINT"
-echo "  RDS_SECRET_NAME      = $RDS_SECRET_NAME"
+echo "  RDS_SECRET_ARN       = $RDS_SECRET_ARN"
 echo "  BACKEND_SECRET_NAME  = $BACKEND_SECRET_NAME"
 echo "  ACM_CERT_ARN         = $ACM_CERT_ARN"
 echo ""
@@ -110,7 +109,7 @@ print_diff() {
 }
 
 print_diff "values-aws-dev.yaml: DB_HOST"       "$CUR_DB_HOST"   "$RDS_ENDPOINT"
-print_diff "values-aws-dev.yaml: dbSecretName"  "$CUR_DB_SECRET" "$RDS_SECRET_NAME"
+print_diff "values-aws-dev.yaml: dbSecretName"  "$CUR_DB_SECRET" "$RDS_SECRET_ARN"
 print_diff "values-aws-dev.yaml: certArn"       "$CUR_ACM"       "$ACM_CERT_ARN"
 print_diff "kube-prometheus-stack.yaml: certArn" "$CUR_KPS_ACM"  "$ACM_CERT_ARN"
 
@@ -131,7 +130,7 @@ echo -e "${BLUE}► Applying $CHANGED change(s)...${NC}"
 
 # values-aws-dev.yaml
 yq eval -i ".backend.config.DB_HOST = \"$RDS_ENDPOINT\"" "$VALUES_FILE"
-yq eval -i ".backend.externalSecret.dbSecretName = \"$RDS_SECRET_NAME\"" "$VALUES_FILE"
+yq eval -i ".backend.externalSecret.dbSecretName = \"$RDS_SECRET_ARN\"" "$VALUES_FILE"
 yq eval -i ".ingress.alb.certificateArn = \"$ACM_CERT_ARN\"" "$VALUES_FILE"
 
 # kube-prometheus-stack.yaml — update cert ARN safely with yq
@@ -164,7 +163,8 @@ if [ "$COMMIT" = true ]; then
 
 - RDS endpoint:   $RDS_ENDPOINT
 - ACM cert:       $ACM_CERT_ARN
-- DB secret:      $RDS_SECRET_NAME
+- DB secret ARN:  $RDS_SECRET_ARN
+
 
 [skip ci]"
   git push origin main
