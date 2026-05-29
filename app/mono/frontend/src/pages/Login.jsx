@@ -19,7 +19,7 @@ function Login({ onLogin }) {
 
   return (
     <div style={{ maxWidth: 360, margin: '100px auto', padding: 24, border: '1px solid #eee', borderRadius: 12, fontFamily: 'sans-serif' }}>
-      <h2 style={{ textAlign: 'center' }}>{isRegister ? 'Dang ky' : 'Dang nhap v3'}</h2>
+      <h2 style={{ textAlign: 'center' }}>{isRegister ? 'Dang ky' : 'Dang nhap'}</h2>
       {error && <p style={{ color: 'red', textAlign: 'center' }}>{error}</p>}
       <form onSubmit={handleSubmit}>
         {isRegister && (
