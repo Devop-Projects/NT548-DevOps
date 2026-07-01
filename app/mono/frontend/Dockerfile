@@ -15,7 +15,7 @@ ARG VITE_API_URL=http://localhost:8080/api
 ENV VITE_API_URL=$VITE_API_URL
 RUN npm run build
 
-FROM nginx:1.25.3-alpine AS runtime
+FROM nginx:1.31.2-alpine AS runtime
 
 
 RUN touch /var/run/nginx.pid && \
