@@ -32,6 +32,8 @@ NT548 Task Manager is a **production-grade three-tier web application** built as
 
 **Demo URL:** `https://task-manager.vantai.click` — the EKS environment is provisioned on demand rather than left running, so the domain only resolves while the stack is up. See [AWS Deployment](#aws-deployment) to bring it up in your own account (a Route 53 domain is required).
 
+**Full report:** [`docs/NT548_Group21_Report.pdf`](docs/NT548_Group21_Report.pdf) (Vietnamese) — design rationale, test scenarios and results.
+
 ### Key Features
 
 | Feature | Implementation |
@@ -47,6 +49,45 @@ NT548 Task Manager is a **production-grade three-tier web application** built as
 ---
 
 ## 🏗 Architecture
+
+### AWS infrastructure
+
+![AWS architecture](docs/architecture/diagrams/AWS/aws-architecture.png)
+
+A single VPC `10.0.0.0/16` in `ap-southeast-1`, spread over **two Availability Zones**.
+Each AZ has a public subnet (`10.0.1.0/24`, `10.0.2.0/24`) holding its own **NAT
+Gateway**, and a private subnet (`10.0.11.0/24`, `10.0.12.0/24`) holding the EKS nodes
+and RDS. One NAT per AZ costs more than a shared one, but it means an AZ outage cannot
+take outbound connectivity away from the other AZ.
+
+Traffic enters through Route 53 → Internet Gateway → ALB, with TLS terminated using an
+ACM certificate. Nothing in the private tier is reachable from the Internet.
+
+The managed services on the right of the diagram are what make the platform
+reproducible rather than hand-built:
+
+| Service | Why it is there |
+|---|---|
+| **S3 + DynamoDB** | Terraform remote state with state locking — two `apply` runs cannot corrupt each other |
+| **Secrets Manager** | Application secrets and the RDS master password; never in Git |
+| **KMS** | Envelope encryption for EKS secrets and RDS storage at rest |
+| **IAM / IRSA** | Pod-level AWS permissions, so a pod gets its own role instead of the node's |
+| **CloudWatch** | EKS control-plane logs, metrics and alarms |
+
+### Delivery pipeline
+
+![System architecture](docs/architecture/diagrams/System/system-architecture.png)
+
+A push travels through GitHub Actions (SonarCloud quality gate, Trivy filesystem scan),
+produces a Docker image, and updates the Helm chart values in the GitOps repository.
+ArgoCD pulls that change and applies the chart to the cluster, where Argo Rollouts
+performs the Blue/Green switch and can roll back. Prometheus scrapes the workload and
+Grafana visualises it — and the same Prometheus data is what gates the rollout.
+
+Terraform sits on a separate track: it provisions the infrastructure the pipeline
+deploys onto, and is never driven by the application pipeline.
+
+### In-cluster view
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
