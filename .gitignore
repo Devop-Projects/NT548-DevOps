@@ -59,11 +59,23 @@ crash.log
 crash.*.log
 
 # Secret
-*.tfvars         # ⚠️ Chứa thể chứa sensitive (đôi khi commit *.tfvars là OK nếu không có secret)
+#
+# LUU Y: git chi coi '#' la comment khi no dung o DAU dong. Dong
+# "*.tfvars  # ghi chu" truoc day bi git hieu la mot pattern nguyen ven
+# (ke ca phan ghi chu) nen khong ignore duoc gi ca.
+#
+# Cac file *.tfvars trong repo nay duoc commit CO CHU Y: chung da duoc
+# review va chi chua config khong nhay cam (engine version, instance
+# class, domain, subnet CIDR...). Moi gia tri bi mat deu nam trong AWS
+# Secrets Manager va duoc External Secrets Operator dong bo vao cluster.
+# Neu sau nay them bien nhay cam vao tfvars, bo comment dong duoi day.
+# *.tfvars
+
 override.tf
 override.tf.json
 *_override.tf
-*_override.tf.jsonk8s/overlays/aws/kustomization.yaml
+*_override.tf.json
+k8s/overlays/aws/kustomization.yaml
 # k8s/overlays/aws/external-secret.yaml
 # k8s/overlays/aws/ingress-alb.yaml
 infrastructure/envs/*/common.auto.tfvars
@@ -75,3 +87,16 @@ k8s/overlays/aws/*.bak
 infrastructure/envs/*/common.auto.tfvars
 infrastructure/envs/eks/*helm
 infrastructure/envs/eks/.helm
+# --- Binary cong cu tai ve (KHONG commit) ---
+# Truoc day repo nay commit ca awscliv2.zip (69 MB) va kubectl (57 MB),
+# lam moi lan clone phai tai ve 316 MB. Cac binary nay nen duoc cai bang
+# package manager hoac tai trong buoc setup, khong nam trong git.
+# Anchor bang '/' de chi khop o thu muc goc — tranh vo tinh ignore
+# mot thu muc con hop le co cung ten (vi du scripts/terraform/).
+/awscliv2.zip
+/kubectl
+/kubectl.sha256
+/aws/
+/helm
+/eksctl
+/terraform

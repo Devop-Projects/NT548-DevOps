@@ -2,8 +2,8 @@
 
 > **Full-stack GitOps pipeline on AWS EKS** — CI/CD, Infrastructure as Code, Kubernetes, Observability, and Progressive Delivery.
 
-[![CI](https://github.com/<YOUR_GITHUB_ORG>/<YOUR_APP_REPO>/actions/workflows/ci.yml/badge.svg)](https://github.com/<YOUR_GITHUB_ORG>/<YOUR_APP_REPO>/actions/workflows/ci.yml)
-[![IaC Security](https://github.com/<YOUR_GITHUB_ORG>/<YOUR_APP_REPO>/actions/workflows/iac-security.yml/badge.svg)](https://github.com/<YOUR_GITHUB_ORG>/<YOUR_APP_REPO>/actions/workflows/iac-security.yml)
+[![CI](https://github.com/Devop-Projects/NT548-DevOps/actions/workflows/ci.yml/badge.svg)](https://github.com/Devop-Projects/NT548-DevOps/actions/workflows/ci.yml)
+[![IaC Security](https://github.com/Devop-Projects/NT548-DevOps/actions/workflows/iac-security.yml/badge.svg)](https://github.com/Devop-Projects/NT548-DevOps/actions/workflows/iac-security.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ---
@@ -30,7 +30,7 @@
 
 NT548 Task Manager is a **production-grade three-tier web application** built as a university DevOps thesis project. It demonstrates end-to-end DevOps practices: from local development to fully automated AWS cloud deployment with GitOps.
 
-**Live Demo:** `https://<YOUR_SUBDOMAIN>.<YOUR_DOMAIN>` *(requires Route53 domain — see [AWS Deployment](#aws-deployment))*
+**Demo URL:** `https://task-manager.vantai.click` — the EKS environment is provisioned on demand rather than left running, so the domain only resolves while the stack is up. See [AWS Deployment](#aws-deployment) to bring it up in your own account (a Route 53 domain is required).
 
 ### Key Features
 
@@ -188,8 +188,8 @@ yq
 ### Local Development (Docker Compose)
 
 ```bash
-git clone https://github.com/<YOUR_ORG>/<YOUR_APP_REPO>.git
-cd <YOUR_APP_REPO>/app/mono
+git clone https://github.com/Devop-Projects/NT548-DevOps.git
+cd NT548-DevOps/app/mono
 
 # Set required environment variables
 cp .env.example .env.local
@@ -244,8 +244,8 @@ npm test
 
 ```bash
 # 1. Clone and configure
-git clone https://github.com/<YOUR_ORG>/<YOUR_APP_REPO>.git
-cd <YOUR_APP_REPO>
+git clone https://github.com/Devop-Projects/NT548-DevOps.git
+cd NT548-DevOps
 
 # Edit infrastructure/common.tfvars
 # Edit infrastructure/envs/dns/terraform.tfvars (or skip if no domain)
@@ -406,7 +406,7 @@ The backend exposes Prometheus metrics at `/metrics`:
 - Latency distribution heatmap
 - DB pool saturation gauge
 
-Access: `https://grafana.<YOUR_DOMAIN>` (credentials in AWS Secrets Manager — path configured in `infrastructure/envs/secrets/secrets.tf`)
+Access: `https://grafana.vantai.click` (credentials in AWS Secrets Manager — path configured in `infrastructure/envs/secrets/secrets.tf`)
 
 ```bash
 # Retrieve Grafana admin password
@@ -552,7 +552,7 @@ Major versions of React and Express are excluded from auto-update and require ma
 
 ## 📡 API Reference
 
-Base URL: `https://<YOUR_SUBDOMAIN>.<YOUR_DOMAIN>/api` (or the ALB hostname directly if no domain)
+Base URL: `https://task-manager.vantai.click/api` (or the ALB hostname directly if no domain)
 
 ### Authentication
 
